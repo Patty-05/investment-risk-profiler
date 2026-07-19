@@ -1,0 +1,29 @@
+# ── Core web framework ─────────────────────────────────────────────────────
+Flask==2.3.3
+Werkzeug==2.3.7          # ✅ FIX: must be pinned — Flask 2.3.x breaks with Werkzeug 3.x
+flask-cors==4.0.0
+
+# ── Data & numerics ────────────────────────────────────────────────────────
+pandas>=2.2.2,<3.0.0     # ✅ FIX: upper bound added — pandas 3.x may break yfinance
+numpy>=1.26.4,<2.0.0
+
+# ── Scientific / ML ────────────────────────────────────────────────────────
+# ✅ FIX: scipy 1.11 requires numpy <1.26 — bumped to 1.13 which supports numpy 1.26+
+scipy>=1.13.0,<2.0.0
+scikit-learn==1.4.2
+statsmodels==0.14.0
+
+# ── Market data ────────────────────────────────────────────────────────────
+# ✅ FIX: bumped yfinance — 0.2.28 has broken .info keys; 0.2.40+ is stable
+yfinance>=0.2.40,<0.3.0
+requests>=2.31.0,<3.0.0  # ✅ FIX: pin requests — yfinance HTTP layer sensitive to changes
+
+# ── Utilities ──────────────────────────────────────────────────────────────
+python-dotenv==1.0.0
+
+# ── Optional: moon phase analysis (non-critical) ──────────────────────────
+# Uncomment to enable moon phase indicator in technical_analysis.py
+astral==3.2
+
+# ── Production server (uncomment for deployment) ──────────────────────────
+gunicorn>=21.2.0
