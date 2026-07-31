@@ -12,6 +12,10 @@ numpy>=1.26.4,<2.0.0
 scipy>=1.13.0,<2.0.0
 scikit-learn==1.4.2
 statsmodels==0.14.0
+xgboost>=2.0.0,<3.0.0    # ✅ FIX: was imported by models/stock_model.py but unlisted
+
+# ── AI insight (Gemini) ────────────────────────────────────────────────────
+google-generativeai>=0.7.0,<1.0.0   # ✅ FIX: used by services/gemini_service.py, was unlisted
 
 # ── Market data ────────────────────────────────────────────────────────────
 # ✅ FIX: bumped yfinance — 0.2.28 has broken .info keys; 0.2.40+ is stable
@@ -20,6 +24,17 @@ requests>=2.31.0,<3.0.0  # ✅ FIX: pin requests — yfinance HTTP layer sensiti
 
 # ── Utilities ──────────────────────────────────────────────────────────────
 python-dotenv==1.0.0
+
+# ── Enhanced sentiment: news ingestion (Phase 1, light) ────────────────────
+feedparser>=6.0.11,<7.0.0      # RSS parsing (Google News / Yahoo feeds)
+trafilatura>=1.8.0,<2.0.0      # full-article body extraction (scraping fallback)
+lxml_html_clean>=0.4.0         # required by trafilatura/justext on lxml>=5
+
+# ── Enhanced sentiment: FinBERT scoring (Phase 2, heavy — see docs) ────────
+# Uncomment to enable transformer-based sentiment. Pulls in torch (~2GB) and
+# downloads ProsusAI/finbert (~400MB) on first run.
+# transformers>=4.40.0,<5.0.0
+# torch>=2.2.0,<3.0.0
 
 # ── Optional: moon phase analysis (non-critical) ──────────────────────────
 # Uncomment to enable moon phase indicator in technical_analysis.py

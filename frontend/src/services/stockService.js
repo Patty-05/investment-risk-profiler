@@ -24,13 +24,16 @@ import api from '../api';
  *   risk_level
  * }
  */
-export const analyzeStock = async (ticker) => {
+export const analyzeStock = async (ticker, profile = {}) => {
   if (!ticker || typeof ticker !== 'string') {
     throw { message: 'A valid ticker symbol is required', status: 400 };
   }
 
   const { data } = await api.post('/api/analyze-stock', {
     ticker: ticker.toUpperCase().trim(),
+    // Investor profile drives the personalised portfolio allocation
+    risk_appetite: profile.riskAppetite ?? null,
+    horizon: profile.horizon ?? null,
   });
 
   if (!data.success) {

@@ -1,3 +1,13 @@
+# NOTE: torch must be imported before MKL/OpenMP libraries (numpy, scikit-learn,
+# xgboost). On Windows, loading torch after them triggers a DLL init conflict
+# (WinError 1114 loading c10.dll) that silently disables FinBERT sentiment.
+# Guarded so the app still runs if torch isn't installed (sentiment falls back
+# to the keyword engine).
+try:
+    import torch  # noqa: F401  (import for side-effect: DLL load order)
+except Exception:
+    pass
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
@@ -9,6 +19,7 @@ from datetime import datetime, timedelta
 from modules.stock_analyzer import StockRiskAnalyzer
 from modules.trading_strategies import StrategySelector, Backtester, RiskManager
 from modules.data_fetcher import StockDataFetcher
+from services import war_service
 import pandas as pd
 
 from datetime import datetime, timedelta
@@ -78,14 +89,19 @@ def analyze_stock():
         if not ticker:
             return jsonify({'success': False, 'error': 'Stock ticker is required'}), 400
 
-        print(f"Analyzing stock: {ticker}")
+        # Investor risk profile — personalises the portfolio allocation.
+        # Optional; the optimizer applies sensible 'medium' defaults if absent.
+        risk_appetite = data.get('risk_appetite') or data.get('riskAppetite')
+        horizon = data.get('horizon')
+
+        print(f"Analyzing stock: {ticker} (risk_appetite={risk_appetite}, horizon={horizon})")
 
         fetcher = StockDataFetcher(ticker)
         if not fetcher.validate_ticker():
             return jsonify({'success': False, 'error': 'Invalid or unsupported stock ticker'}), 400
 
         # ✅ FIX: Analyzer reuses the fetcher — avoids double network call
-        analyzer = StockRiskAnalyzer(ticker)
+        analyzer = StockRiskAnalyzer(ticker, risk_appetite=risk_appetite, horizon=horizon)
         results = analyzer.analyze()
 
         if not results.get('success'):
@@ -146,6 +162,35 @@ def profile_investor():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy', 'message': 'Backend is running'})
+
+
+@app.route('/api/conflicts', methods=['GET'])
+def get_conflicts():
+    """Curated geopolitical conflict watchlist for the War Room."""
+    try:
+        return jsonify({'success': True, 'conflicts': war_service.list_conflicts()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/war-analysis', methods=['POST'])
+def war_analysis():
+    """
+    India-specific geopolitical impact analysis. Provide either:
+      - conflict_id   (from the curated watchlist), or
+      - scenario_text (a free-text 'what if' scenario).
+    """
+    try:
+        data = request.json or {}
+        result = war_service.analyze(
+            conflict_id=data.get('conflict_id'),
+            scenario_text=data.get('scenario_text'),
+        )
+        status = 200 if result.get('success') else 400
+        return jsonify(sanitize_for_json(result)), status
+    except Exception as e:
+        print(f"Error in war analysis: {traceback.format_exc()}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/trading-strategies', methods=['GET'])

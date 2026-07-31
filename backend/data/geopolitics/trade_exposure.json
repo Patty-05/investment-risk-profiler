@@ -1,0 +1,73 @@
+{
+  "commodities": {
+    "crude_oil": {
+      "india_position": "Net importer — imports ~85–88% of crude needs; oil is India's single largest import item (~a quarter of the import bill). ~40% historically sourced from the Middle East/Gulf, with Russia now a leading supplier.",
+      "price_rise_effect": "Negative for the economy: every ~$10/bbl rise widens the current-account deficit, pressures the rupee, and fuels input-cost inflation.",
+      "notes": "Discounted Russian crude has cushioned India; a supply shock still raises the landed price."
+    },
+    "textiles": {
+      "india_position": "India is a major textile and apparel exporter; competes directly with Bangladesh, Vietnam and China for global garment orders.",
+      "disruption_effect": "Disruption at a rival hub (e.g. Bangladesh) or a China+1 shift redirects export orders to Indian garment and home-textile makers."
+    },
+    "natural_gas": {
+      "india_position": "Growing LNG importer; sensitive to spot LNG prices.",
+      "price_rise_effect": "Negative: raises fertilizer, power, city-gas and CGD input costs."
+    },
+    "lng": {
+      "india_position": "Rising LNG importer (US, Qatar, UAE, Australia).",
+      "price_rise_effect": "Negative: raises gas-based fertilizer, power and city-gas costs."
+    },
+    "wheat": {
+      "india_position": "Largely self-sufficient; occasional exporter.",
+      "price_rise_effect": "Global shortage can open export windows for Indian wheat, but govt may curb exports to control domestic food inflation."
+    },
+    "sunflower_oil": {
+      "india_position": "Major importer of edible oils; large sunflower-oil buyer from Russia/Ukraine region.",
+      "price_rise_effect": "Negative: raises edible-oil costs, hits FMCG margins and food inflation."
+    },
+    "palm_oil": {
+      "india_position": "India imports ~55–60% of its edible oil; palm oil is the largest share, sourced mainly from Indonesia and Malaysia.",
+      "price_rise_effect": "Negative: raises edible-oil and FMCG input costs; export bans by producers (as Indonesia has imposed) are an acute shock."
+    },
+    "fertilizers": {
+      "india_position": "Large importer of fertilizers and inputs (potash, phosphates, gas for urea).",
+      "price_rise_effect": "Negative: raises subsidy burden and farm input costs; hits fertilizer makers' margins if uncompensated."
+    },
+    "potash": {
+      "india_position": "Near-total import dependence (Russia, Belarus, Canada).",
+      "price_rise_effect": "Negative: raises fertilizer costs and subsidy burden."
+    },
+    "defense": {
+      "india_position": "Historically a top arms importer; policy push to indigenize and grow exports.",
+      "supply_disruption_effect": "Supply strain from a supplier (e.g. Russia) accelerates the domestic defense-manufacturing theme."
+    },
+    "semiconductors": {
+      "india_position": "Near-total import dependence; nascent domestic fab ambitions.",
+      "supply_disruption_effect": "A Taiwan/Korea disruption would hit electronics/auto/appliance production and prices globally."
+    },
+    "electronics": {
+      "india_position": "Heavy import reliance on China; PLI-backed onshoring under way.",
+      "supply_disruption_effect": "Disruption raises component costs but accelerates domestic electronics manufacturing."
+    },
+    "rare_earths": {
+      "india_position": "Dependent on China for rare-earth magnets used in EVs, electronics and defense.",
+      "supply_disruption_effect": "A Chinese export curb squeezes EV/electronics/defense supply chains globally."
+    },
+    "pharmaceuticals_api": {
+      "india_position": "Depends on China for roughly 60–70% of its bulk-drug / active pharma ingredient (API) needs, despite being the world's largest generics exporter.",
+      "supply_disruption_effect": "A China supply cut raises API costs and boosts domestic API-manufacturing (PLI-backed) incentives."
+    },
+    "thermal_coal": {
+      "india_position": "Imports a meaningful share of thermal/coking coal (Indonesia, Australia, Russia) despite large domestic output.",
+      "price_rise_effect": "Negative for power and cement input costs; positive for domestic coal producers."
+    },
+    "gold": {
+      "india_position": "One of the world's largest gold importers; safe-haven demand rises in crises.",
+      "price_rise_effect": "Widens trade deficit, but lifts jewellery/gold-financier revenues and hedging demand."
+    },
+    "shipping": {
+      "india_position": "Trade-route sensitive (Hormuz for crude, Red Sea/Suez for exports to Europe).",
+      "disruption_effect": "Higher freight and insurance costs; longer transit; margin pressure for exporters and importers; gains for shipping owners."
+    }
+  }
+}

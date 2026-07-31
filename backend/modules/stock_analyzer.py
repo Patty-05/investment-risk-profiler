@@ -9,8 +9,10 @@ from modules.data_fetcher import StockDataFetcher
 from modules.technical_analysis import TechnicalAnalyzer
 from modules.fundamental_analysis import FundamentalAnalyzer
 from modules.sentiment_analysis import SentimentAnalyzer
+from modules.sentiment import EnhancedSentimentAnalyzer
 from modules.volumetric_analysis import VolumetricAnalyzer
 from modules.sector_comparison import SectorComparator
+from modules.geopolitical_analysis import GeopoliticalAnalyzer
 from models.feature_engineer import FeatureEngineer
 from models.stock_model import StockRiskModel
 from services.gemini_service import generate_ai_insight
@@ -31,17 +33,23 @@ def _clamp(score, lo=0, hi=100):
 class StockRiskAnalyzer:
     """Main class that performs comprehensive stock analysis"""
 
-    def __init__(self, ticker, fetcher=None):
+    def __init__(self, ticker, fetcher=None, risk_appetite=None, horizon=None):
         """
         Args:
             ticker:  Stock ticker symbol e.g. 'AAPL', 'RELIANCE.NS'
             fetcher: Optional pre-built StockDataFetcher (reuses its cache).
                      Pass the one already created in app.py to avoid a
                      duplicate network call.
+            risk_appetite: Investor risk appetite ('Low'/'Medium'/'High') used
+                     to personalise the portfolio allocation.
+            horizon: Investment horizon in years (int), also used for the
+                     portfolio allocation.
         """
         self.ticker = ticker
         # ✅ FIX: Accept an existing fetcher so app.py cache is reused
         self.data_fetcher = fetcher if fetcher is not None else StockDataFetcher(ticker)
+        self.risk_appetite = risk_appetite
+        self.horizon = horizon
 
     def analyze(self):
 
@@ -84,10 +92,23 @@ class StockRiskAnalyzer:
             )
 
             # ── Sentiment Analysis ─────────────────────────────────────────
+            # Enhanced pipeline: hybrid news ingestion (RSS + scraping) →
+            # FinBERT scoring → stock/sector/divergence aggregation. Falls back
+            # to the keyword SentimentAnalyzer internally if FinBERT or news is
+            # unavailable, so the output contract is always satisfied.
+            # fetch_bodies=False: skip full-article scraping on the per-stock
+            # path (the slow part). FinBERT still scores headline + summary,
+            # which keeps the factor responsive; the standalone War Room LLM
+            # path is unaffected. max_per_scope kept small for latency.
             print("Performing sentiment analysis...")
             sentiment_results, _ = self._run_safely(
                 "sentiment",
-                lambda: (SentimentAnalyzer().get_sentiment_score(news), None)
+                lambda: (
+                    EnhancedSentimentAnalyzer(max_per_scope=6, fetch_bodies=False).analyze(
+                        self.ticker, stock_info=current_info
+                    ),
+                    None,
+                )
             )
 
             # ── Volumetric Analysis ────────────────────────────────────────
@@ -104,13 +125,23 @@ class StockRiskAnalyzer:
                 lambda: (SectorComparator(self.ticker, stock_info=current_info).get_sector_comparison(), None)
             )
 
+            # ── Geopolitical Exposure (War Room phase 2) ───────────────────
+            # Deterministic reverse-lookup against the conflict knowledge base;
+            # no LLM call, so negligible latency.
+            print("Performing geopolitical exposure analysis...")
+            geopolitical_results, _ = self._run_safely(
+                "geopolitical",
+                lambda: (GeopoliticalAnalyzer(self.ticker).get_geopolitical_score(), None)
+            )
+
             # ── Overall Score ──────────────────────────────────────────────
             overall_score = self._calculate_overall_score(
                 technical_results,
                 fundamental_results,
                 sentiment_results,
                 volumetric_results,
-                sector_results
+                sector_results,
+                geopolitical_results
             )
 
             recommendations = self._generate_recommendations(
@@ -125,18 +156,25 @@ class StockRiskAnalyzer:
             # 🔹 ML FEATURE ENGINEERING
             # =========================
 
-            features_array, feature_dict = feature_engineer.build(
-                technical_ml if technical_ml else {},
-                fundamental_results if isinstance(fundamental_results, dict) else {},
-                sentiment_results if isinstance(sentiment_results, dict) else {}
-            )
+            # Build the canonical technical features from the SAME function used
+            # in training (feature_engineer.build_frame), on the latest bar — so
+            # train and serve see an identical feature distribution.
+            features_array, feature_dict = feature_engineer.build_latest(hist_data)
+
+            # Real sentiment is not a model input (no historical source), but it
+            # still informs the rule-based override as a heuristic.
+            if isinstance(sentiment_results, dict):
+                feature_dict = {
+                    **feature_dict,
+                    "sentiment_score": sentiment_results.get("score", 50),
+                }
             print("ML FEATURES:", feature_dict)
 
             # =========================
             # 🔹 ML PREDICTION
             # =========================
 
-            ml_result = stock_model.predict(features_array)
+            ml_result = stock_model.predict(features_array, feature_dict=feature_dict)
 
             feature_importance = stock_model.get_feature_importance(
                 feature_engineer.get_feature_names()
@@ -186,6 +224,7 @@ class StockRiskAnalyzer:
                 'sentiment_analysis': sentiment_results,
                 'volumetric_analysis': volumetric_results,
                 'sector_comparison': sector_results,
+                'geopolitical_analysis': geopolitical_results,
 
                 'recommendations': recommendations,
                 'risk_level': self._get_risk_level(overall_score['score']),
@@ -213,14 +252,20 @@ class StockRiskAnalyzer:
             }
 
             # =========================
-            # 🔹 GEMINI AI
+            # 🔹 PORTFOLIO (before Gemini, so the insight can reference it)
             # =========================
-
-            results["gemini_insight"] = generate_ai_insight(results)
             optimizer = PortfolioOptimizer()
-            portfolio = optimizer.optimize(results)
-
+            portfolio = optimizer.optimize(
+                results,
+                risk_appetite=self.risk_appetite,
+                horizon=self.horizon,
+            )
             results["portfolio"] = portfolio
+
+            # =========================
+            # 🔹 GEMINI AI — India-aware reasoning layer over the full analysis
+            # =========================
+            results["gemini_insight"] = generate_ai_insight(results)
 
             # =========================
             # 🔹 RETURN
@@ -269,7 +314,7 @@ class StockRiskAnalyzer:
         fa = FundamentalAnalyzer(current_info, financials, news)
         return fa.get_fundamental_score(), fa.get_comprehensive_fundamental_analysis()
 
-    def _calculate_overall_score(self, tech, fund, sent, vol, sector):
+    def _calculate_overall_score(self, tech, fund, sent, vol, sector, geo=None):
         """Calculate weighted overall score from all analyses."""
 
         # ✅ FIX: If sector stub always returns 50, redistribute its weight
@@ -295,6 +340,19 @@ class StockRiskAnalyzer:
                 'sector':      0.15
             }
 
+        # ── Geopolitical factor: only contributes when the stock is actually
+        #    exposed to a tracked conflict, so unexposed (e.g. US) stocks are
+        #    unaffected. When exposed, it takes a slice and the others scale down.
+        geo_exposed = bool(geo and geo.get('exposed'))
+        geo_score = _clamp(geo.get('score', 50)) if geo else 50.0
+        if geo_exposed:
+            geo_weight = 0.12
+            for k in weights:
+                weights[k] *= (1 - geo_weight)
+            weights['geopolitical'] = geo_weight
+        else:
+            weights['geopolitical'] = 0.0
+
         # ✅ FIX: Clamp each sub-score to [0, 100] before weighting
         tech_score   = _clamp(tech.get('score', 50))
         fund_score   = _clamp(fund.get('score', 50))
@@ -307,17 +365,19 @@ class StockRiskAnalyzer:
             fund_score   * weights['fundamental'] +
             sent_score   * weights['sentiment'] +
             vol_score    * weights['volumetric'] +
-            sector_score * weights['sector']
+            sector_score * weights['sector'] +
+            geo_score    * weights['geopolitical']
         )
 
         return {
             'score': round(_clamp(overall), 2),
             'breakdown': {
-                'technical':   round(tech_score, 2),
-                'fundamental': round(fund_score, 2),
-                'sentiment':   round(sent_score, 2),
-                'volumetric':  round(vol_score, 2),
-                'sector':      round(sector_score, 2)
+                'technical':    round(tech_score, 2),
+                'fundamental':  round(fund_score, 2),
+                'sentiment':    round(sent_score, 2),
+                'volumetric':   round(vol_score, 2),
+                'sector':       round(sector_score, 2),
+                'geopolitical': round(geo_score, 2)
             },
             'weights_used': weights  # useful for debugging
         }

@@ -1,0 +1,148 @@
+{
+  "relations": {
+    "Russia": {
+      "relationship": "Time-tested strategic partner; major defense and energy supplier.",
+      "defense_dependence": "High — large legacy fleet of Russian-origin arms (S-400, Su-30, tanks, spares).",
+      "energy": "Became India's largest crude supplier post-2022 via steep discounts.",
+      "stance": "India maintains strategic neutrality; keeps buying discounted crude despite Western pressure.",
+      "india_imports_from": ["crude_oil", "defense", "fertilizers", "coking_coal"],
+      "india_exports_to": ["pharmaceuticals", "tea", "engineering_goods", "seafood"]
+    },
+    "Ukraine": {
+      "relationship": "Friendly but limited; historically a source of some defense components and sunflower oil.",
+      "defense_dependence": "Low–moderate (engine/component spares historically).",
+      "energy": "Not a direct energy supplier to India.",
+      "stance": "India calls for dialogue; provides humanitarian aid.",
+      "india_imports_from": ["sunflower_oil", "defense_components"],
+      "india_exports_to": ["pharmaceuticals", "tea"]
+    },
+    "Israel": {
+      "relationship": "Close defense-technology and agriculture partner.",
+      "defense_dependence": "Moderate–high for advanced systems (drones, missiles, radar).",
+      "energy": "Not a direct supplier; relevant via regional oil-price risk.",
+      "stance": "Warm bilateral ties; India balances with Gulf/Iran energy interests.",
+      "india_imports_from": ["defense_technology"],
+      "india_exports_to": ["pharmaceuticals", "polished_diamonds", "engineering_goods"]
+    },
+    "Iran": {
+      "relationship": "Historic energy and connectivity partner (Chabahar port); constrained by sanctions.",
+      "defense_dependence": "Low.",
+      "energy": "Former major crude supplier; now limited by sanctions but key to Hormuz shipping route.",
+      "stance": "India balances Iran ties with Israel/Gulf relations.",
+      "india_imports_from": ["crude_oil_historic"],
+      "india_exports_to": ["rice", "tea", "pharmaceuticals"]
+    },
+    "China": {
+      "relationship": "Strategic rival and largest source of imports; frozen border standoff.",
+      "defense_dependence": "None (adversary); drives indigenization.",
+      "energy": "Not an energy supplier; competitor for global commodities.",
+      "stance": "Managed rivalry; import-substitution / 'China+1' policy push.",
+      "india_imports_from": ["electronics", "pharmaceuticals_api", "machinery", "solar_cells", "rare_earths"],
+      "india_exports_to": ["iron_ore", "cotton", "organic_chemicals"]
+    },
+    "Pakistan": {
+      "relationship": "Primary security adversary; minimal trade.",
+      "defense_dependence": "None (adversary).",
+      "energy": "None.",
+      "stance": "Hostile; trade largely suspended.",
+      "india_imports_from": [],
+      "india_exports_to": []
+    },
+    "Taiwan": {
+      "relationship": "Unofficial but growing tech/semiconductor partner.",
+      "defense_dependence": "None.",
+      "energy": "None.",
+      "stance": "Deepening tech ties under 'China+1'.",
+      "india_imports_from": ["semiconductors", "electronics"],
+      "india_exports_to": ["chemicals", "engineering_goods"]
+    },
+    "United States": {
+      "relationship": "Strategic partner; largest export market and a key defense-tech and energy supplier.",
+      "defense_dependence": "Growing (aircraft, drones, engines).",
+      "energy": "Rising LNG and crude supplier to India.",
+      "stance": "Deepening ties; India benefits from 'China+1' and services/IT exports.",
+      "india_imports_from": ["defense_technology", "lng", "crude_oil", "machinery"],
+      "india_exports_to": ["it_services", "pharmaceuticals", "gems_jewellery", "textiles", "engineering_goods"]
+    },
+    "Saudi Arabia": {
+      "relationship": "Top crude supplier and major Gulf partner; large Indian diaspora.",
+      "defense_dependence": "Low.",
+      "energy": "Among India's largest crude and LPG suppliers.",
+      "stance": "Strong energy and remittance ties.",
+      "india_imports_from": ["crude_oil", "lpg", "fertilizers"],
+      "india_exports_to": ["rice", "pharmaceuticals", "engineering_goods", "textiles"]
+    },
+    "UAE": {
+      "relationship": "Major trade hub, crude/LPG supplier, and CEPA free-trade partner.",
+      "defense_dependence": "Low.",
+      "energy": "Key crude and LPG supplier; re-export hub.",
+      "stance": "Close economic ties; large Indian workforce and remittances.",
+      "india_imports_from": ["crude_oil", "lpg", "gold"],
+      "india_exports_to": ["gems_jewellery", "engineering_goods", "food", "textiles"]
+    },
+    "Indonesia": {
+      "relationship": "Key supplier of thermal coal and palm oil.",
+      "defense_dependence": "Low.",
+      "energy": "India's largest thermal-coal source.",
+      "stance": "Important commodity-trade partner.",
+      "india_imports_from": ["thermal_coal", "palm_oil"],
+      "india_exports_to": ["refined_petroleum", "pharmaceuticals", "vehicles"]
+    },
+    "Malaysia": {
+      "relationship": "Palm-oil and electronics trade partner.",
+      "defense_dependence": "Low.",
+      "energy": "LNG and palm-oil supplier.",
+      "stance": "Steady commodity ties.",
+      "india_imports_from": ["palm_oil", "lng", "electronics"],
+      "india_exports_to": ["refined_petroleum", "buffalo_meat", "aluminium"]
+    },
+    "Venezuela": {
+      "relationship": "Historic heavy-crude supplier constrained by sanctions.",
+      "defense_dependence": "None.",
+      "energy": "Sanction-dependent crude source.",
+      "stance": "Opportunistic crude buyer when sanctions ease.",
+      "india_imports_from": ["crude_oil_historic"],
+      "india_exports_to": ["pharmaceuticals", "rice"]
+    },
+    "North Korea": {
+      "relationship": "Minimal ties; sanctioned state.",
+      "defense_dependence": "None.",
+      "energy": "None.",
+      "stance": "Negligible trade; relevance is global risk sentiment.",
+      "india_imports_from": [],
+      "india_exports_to": []
+    },
+    "South Korea": {
+      "relationship": "Electronics, auto and steel trade partner (CEPA).",
+      "defense_dependence": "Low–moderate (artillery/tech tie-ups).",
+      "energy": "None.",
+      "stance": "Growing tech and manufacturing ties.",
+      "india_imports_from": ["electronics", "semiconductors", "machinery", "steel"],
+      "india_exports_to": ["refined_petroleum", "aluminium", "chemicals"]
+    },
+    "Philippines": {
+      "relationship": "ASEAN partner; emerging defense-export customer (BrahMos).",
+      "defense_dependence": "None (India is a supplier).",
+      "energy": "None.",
+      "stance": "Growing defense-export relationship.",
+      "india_imports_from": ["electronics"],
+      "india_exports_to": ["defense", "pharmaceuticals", "vehicles"]
+    },
+    "Bangladesh": {
+      "relationship": "Key neighbour and trade partner; rival apparel-export hub.",
+      "defense_dependence": "None.",
+      "energy": "Minor (India exports power/fuel to Bangladesh).",
+      "stance": "Close but sensitive; instability raises border and migration concerns and shifts garment orders to India.",
+      "india_imports_from": ["textiles", "jute"],
+      "india_exports_to": ["cotton", "refined_petroleum", "power", "vehicles"]
+    },
+    "Myanmar": {
+      "relationship": "North-eastern neighbour; connectivity (Kaladan) and security focus.",
+      "defense_dependence": "None.",
+      "energy": "Minor gas ties.",
+      "stance": "Engages the junta pragmatically while managing border security and refugee flows.",
+      "india_imports_from": ["pulses", "gems", "timber"],
+      "india_exports_to": ["pharmaceuticals", "refined_petroleum", "machinery"]
+    }
+  }
+}

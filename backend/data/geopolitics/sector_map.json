@@ -1,0 +1,157 @@
+{
+  "themes": {
+    "crude_oil_up": {
+      "description": "Sustained rise in crude oil prices.",
+      "benefits": [
+        {"sector": "Upstream Oil & Gas (producers)", "tickers": ["ONGC.NS", "OIL.NS"], "rationale": "Higher realisations on the crude and gas they produce."}
+      ],
+      "hurts": [
+        {"sector": "Oil Marketing Companies", "tickers": ["IOC.NS", "BPCL.NS", "HINDPETRO.NS"], "rationale": "Marketing margins squeezed if retail fuel prices lag crude."},
+        {"sector": "Paints", "tickers": ["ASIANPAINT.NS", "BERGEPAINT.NS", "KANSAINER.NS", "AKZOINDIA.NS"], "rationale": "Crude derivatives (solvents, monomers) are key raw materials."},
+        {"sector": "Tyres", "tickers": ["MRF.NS", "APOLLOTYRE.NS", "CEATLTD.NS", "JKTYRE.NS", "BALKRISIND.NS"], "rationale": "Synthetic rubber and carbon black are crude-linked."},
+        {"sector": "Aviation", "tickers": ["INDIGO.NS", "SPICEJET.NS"], "rationale": "Jet fuel (ATF) is the single largest cost line."},
+        {"sector": "Adhesives & Specialty Chemicals", "tickers": ["PIDILITIND.NS", "SRF.NS", "DEEPAKNTR.NS", "AARTIIND.NS"], "rationale": "Petrochemical-derived inputs raise costs."},
+        {"sector": "Paints/FMCG packaging", "tickers": ["SUPREMEIND.NS"], "rationale": "Crude-linked polymer/plastic input costs."}
+      ]
+    },
+    "energy_importer_relief": {
+      "description": "India securing discounted crude (e.g. Russian barrels) even as global crude stays firm — a refiner-specific feedstock advantage.",
+      "benefits": [
+        {"sector": "Refiners", "tickers": ["RELIANCE.NS", "IOC.NS", "BPCL.NS", "HINDPETRO.NS", "MRPL.NS"], "rationale": "Cheaper discounted feedstock widens gross refining margins."}
+      ],
+      "hurts": []
+    },
+    "natural_gas_up": {
+      "description": "Natural gas / LNG price spike.",
+      "benefits": [
+        {"sector": "Gas producers", "tickers": ["ONGC.NS", "OIL.NS"], "rationale": "Higher domestic gas realisations."}
+      ],
+      "hurts": [
+        {"sector": "City Gas Distribution", "tickers": ["IGL.NS", "MGL.NS", "GUJGASLTD.NS"], "rationale": "Higher input gas cost pressures CNG/PNG margins."},
+        {"sector": "Gas transmission / utilities", "tickers": ["GAIL.NS", "GSPL.NS"], "rationale": "Volume and petchem-margin pressure from costly gas."},
+        {"sector": "Fertilizers (urea)", "tickers": ["CHAMBLFERT.NS", "RCF.NS", "NFL.NS"], "rationale": "Gas is the primary urea feedstock."}
+      ]
+    },
+    "edible_oil_up": {
+      "description": "Sunflower / palm / edible-oil prices spike.",
+      "benefits": [
+        {"sector": "Domestic edible-oil / oilseed processors", "tickers": ["ADANIWILMAR.NS", "GOKUL.NS"], "rationale": "Pricing power and inventory gains partly offset higher import costs."}
+      ],
+      "hurts": [
+        {"sector": "FMCG (food)", "tickers": ["HINDUNILVR.NS", "NESTLEIND.NS", "BRITANNIA.NS", "MARICO.NS", "TATACONSUM.NS"], "rationale": "Edible oil is a major input; margin pressure."},
+        {"sector": "QSR / packaged food", "tickers": ["JUBLFOOD.NS", "DEVYANI.NS"], "rationale": "Cooking-oil cost pressure on food margins."}
+      ]
+    },
+    "fertilizer_input_up": {
+      "description": "Fertilizer / gas / potash input costs spike.",
+      "benefits": [],
+      "hurts": [
+        {"sector": "Fertilizers", "tickers": ["COROMANDEL.NS", "CHAMBLFERT.NS", "GNFC.NS", "RCF.NS", "GSFC.NS", "DEEPAKFERT.NS", "FACT.NS"], "rationale": "Input costs rise; margins depend on subsidy pass-through."}
+      ]
+    },
+    "wheat_export_window": {
+      "description": "Global grain shortage opens Indian export opportunity.",
+      "benefits": [
+        {"sector": "Rice / grain exporters", "tickers": ["KRBL.NS", "LTFOODS.NS"], "rationale": "Higher global prices and export demand (subject to govt curbs)."},
+        {"sector": "Sugar", "tickers": ["BALRAMCHIN.NS", "EIDPARRY.NS", "TRIVENI.NS", "DHAMPURSUG.NS"], "rationale": "Firm soft-commodity prices and ethanol economics."}
+      ],
+      "hurts": []
+    },
+    "defense_indigenization": {
+      "description": "Push to build defense domestically (supply strain or higher spending).",
+      "benefits": [
+        {"sector": "Defense PSUs & manufacturers", "tickers": ["HAL.NS", "BEL.NS", "BDL.NS", "MAZDOCK.NS", "COCHINSHIP.NS", "SOLARINDS.NS", "DATAPATTNS.NS", "PARAS.NS", "MTARTECH.NS", "ZENTEC.NS"], "rationale": "Order inflow from import-substitution and higher defense budgets."}
+      ],
+      "hurts": []
+    },
+    "defense_exports": {
+      "description": "Rising Indian defense exports (e.g. BrahMos, artillery, components).",
+      "benefits": [
+        {"sector": "Defense exporters", "tickers": ["BDL.NS", "BEL.NS", "SOLARINDS.NS", "ZENTEC.NS", "ASTRAMICRO.NS"], "rationale": "Export orders add to the domestic order book."}
+      ],
+      "hurts": []
+    },
+    "china_plus_one": {
+      "description": "Supply-chain shift away from China (electronics, APIs, chemicals).",
+      "benefits": [
+        {"sector": "Pharma APIs", "tickers": ["DIVISLAB.NS", "LAURUSLABS.NS", "GRANULES.NS", "AARTIIND.NS"], "rationale": "Domestic API substitution demand."},
+        {"sector": "Electronics manufacturing (EMS)", "tickers": ["DIXON.NS", "KAYNES.NS", "SYRMA.NS", "AMBER.NS", "CGPOWER.NS"], "rationale": "PLI-backed onshoring of electronics."},
+        {"sector": "Specialty chemicals", "tickers": ["SRF.NS", "NAVINFLUOR.NS", "DEEPAKNTR.NS", "VINATIORGA.NS"], "rationale": "Global buyers diversify chemical sourcing to India."}
+      ],
+      "hurts": [
+        {"sector": "China-input-dependent manufacturers", "tickers": [], "rationale": "Higher input costs during the transition."}
+      ]
+    },
+    "semiconductor_disruption": {
+      "description": "Disruption to global semiconductor supply (Taiwan/Korea).",
+      "benefits": [
+        {"sector": "Domestic fab / OSAT ecosystem", "tickers": ["CGPOWER.NS", "KAYNES.NS"], "rationale": "Onshoring incentives and scarcity value for domestic capacity."}
+      ],
+      "hurts": [
+        {"sector": "Autos (chip-dependent)", "tickers": ["MARUTI.NS", "TATAMOTORS.NS", "M&M.NS", "BAJAJ-AUTO.NS"], "rationale": "Chip shortages throttle vehicle production."},
+        {"sector": "Consumer electronics / appliances", "tickers": ["DIXON.NS", "HAVELLS.NS", "VOLTAS.NS"], "rationale": "Component scarcity raises costs and delays output."}
+      ]
+    },
+    "rare_earths_squeeze": {
+      "description": "China restricts rare-earth / magnet exports.",
+      "benefits": [
+        {"sector": "Domestic mining / substitution", "tickers": ["NMDC.NS"], "rationale": "Strategic-minerals push and scarcity value."}
+      ],
+      "hurts": [
+        {"sector": "EV & auto", "tickers": ["TATAMOTORS.NS", "M&M.NS", "TVSMOTOR.NS", "OLAELEC.NS"], "rationale": "Rare-earth magnets are critical for EV motors."},
+        {"sector": "Electronics & appliances", "tickers": ["DIXON.NS", "HAVELLS.NS"], "rationale": "Magnets/components rely on rare earths."}
+      ]
+    },
+    "shipping_freight_up": {
+      "description": "Freight, insurance and transit costs spike (Red Sea / Hormuz / route disruption).",
+      "benefits": [
+        {"sector": "Shipping owners", "tickers": ["SCI.NS", "GESHIP.NS"], "rationale": "Higher charter and freight rates lift earnings."}
+      ],
+      "hurts": [
+        {"sector": "Exporters (to Europe/US)", "tickers": ["WELCORP.NS", "TATASTEEL.NS"], "rationale": "Higher freight and longer transit erode export competitiveness."},
+        {"sector": "Logistics / import-heavy", "tickers": ["CONCOR.NS", "TCIEXP.NS"], "rationale": "Transit delays and cost inflation squeeze margins."}
+      ]
+    },
+    "coal_up": {
+      "description": "Thermal / coking coal price spike.",
+      "benefits": [
+        {"sector": "Coal producers", "tickers": ["COALINDIA.NS", "NLCINDIA.NS"], "rationale": "Higher realisations for domestic coal."}
+      ],
+      "hurts": [
+        {"sector": "Power utilities (imported coal)", "tickers": ["TATAPOWER.NS", "JSWENERGY.NS", "ADANIPOWER.NS"], "rationale": "Higher imported-coal fuel costs."},
+        {"sector": "Cement", "tickers": ["ULTRACEMCO.NS", "SHREECEM.NS", "AMBUJACEM.NS", "ACC.NS"], "rationale": "Coal/pet-coke is a major kiln fuel."}
+      ]
+    },
+    "gold_safe_haven": {
+      "description": "Crisis-driven safe-haven demand lifts gold.",
+      "benefits": [
+        {"sector": "Jewellery / gold financiers", "tickers": ["TITAN.NS", "KALYANKJIL.NS", "MUTHOOTFIN.NS", "MANAPPURAM.NS"], "rationale": "Higher gold prices lift inventory value and loan books."}
+      ],
+      "hurts": []
+    },
+    "risk_off_rupee_weak": {
+      "description": "Broad risk-off / rupee depreciation from conflict escalation.",
+      "benefits": [
+        {"sector": "IT services / exporters", "tickers": ["TCS.NS", "INFY.NS", "WIPRO.NS", "HCLTECH.NS", "TECHM.NS"], "rationale": "Dollar revenue gains on a weaker rupee."},
+        {"sector": "Gold proxies", "tickers": ["TITAN.NS"], "rationale": "Safe-haven demand for gold."}
+      ],
+      "hurts": [
+        {"sector": "Import-heavy / high-beta sectors", "tickers": [], "rationale": "Risk aversion and costlier dollar imports."}
+      ]
+    },
+    "pharma_generic_demand": {
+      "description": "Supply shocks lift demand for Indian generic pharma / APIs.",
+      "benefits": [
+        {"sector": "Generic pharma", "tickers": ["SUNPHARMA.NS", "DRREDDY.NS", "CIPLA.NS", "LUPIN.NS", "AUROPHARMA.NS", "ZYDUSLIFE.NS"], "rationale": "India as the 'pharmacy of the world' gains share on supply disruptions."}
+      ],
+      "hurts": []
+    },
+    "textile_export_gain": {
+      "description": "Disruption at a rival garment hub (e.g. Bangladesh) or a China+1 shift redirects apparel and home-textile orders to India.",
+      "benefits": [
+        {"sector": "Apparel & home textiles", "tickers": ["KPRMILL.NS", "TRIDENT.NS", "WELSPUNLIV.NS", "GOKEX.NS", "ARVIND.NS", "PAGEIND.NS", "VTL.NS"], "rationale": "Global buyers divert orders to Indian garment and home-textile exporters."}
+      ],
+      "hurts": []
+    }
+  }
+}

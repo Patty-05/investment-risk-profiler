@@ -4,7 +4,10 @@ const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 60000,
+  // First-call stock analysis runs FinBERT sentiment (news ingest + scoring),
+  // slower for fresh Indian tickers. 150s headroom avoids spurious browser-side
+  // aborts (e.g. War Room ticker hand-offs); cached calls return near-instantly.
+  timeout: 150000,
   headers: { 'Content-Type': 'application/json' },
 });
 

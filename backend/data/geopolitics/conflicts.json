@@ -1,0 +1,199 @@
+{
+  "conflicts": [
+    {
+      "id": "russia_ukraine",
+      "name": "Russia–Ukraine War",
+      "parties": ["Russia", "Ukraine"],
+      "status": "active",
+      "since": "2022",
+      "india_relevance": "high",
+      "summary": "Full-scale war since Feb 2022. Disrupts global energy, coal, grain, fertilizer and sunflower-oil supply. India stays officially neutral and has become a major buyer of discounted Russian crude.",
+      "key_commodities": ["crude_oil", "natural_gas", "thermal_coal", "wheat", "sunflower_oil", "fertilizers", "defense"],
+      "escalation_triggers": [
+        "Attacks on energy export infrastructure / Black Sea grain corridor",
+        "Secondary sanctions on buyers of Russian crude",
+        "NATO direct involvement"
+      ]
+    },
+    {
+      "id": "india_pakistan",
+      "name": "India–Pakistan Tensions",
+      "parties": ["India", "Pakistan"],
+      "status": "recurring",
+      "since": "1947",
+      "india_relevance": "very_high",
+      "summary": "Long-standing rivalry with periodic flare-ups (Kashmir, cross-border terror, border skirmishes). Direct-belligerent scenario for India: raises defense spending, hits risk sentiment, pressures the rupee.",
+      "key_commodities": ["defense"],
+      "escalation_triggers": [
+        "Major terror attack attributed across the border",
+        "LoC / border military action",
+        "Airspace or trade suspension"
+      ]
+    },
+    {
+      "id": "israel_iran",
+      "name": "Israel–Iran / Middle East Conflict",
+      "parties": ["Israel", "Iran"],
+      "status": "active",
+      "since": "2023",
+      "india_relevance": "high",
+      "summary": "Escalating regional conflict threatening the Strait of Hormuz, through which a large share of India's crude and LNG imports pass. Primary channel to India is oil price and shipping/insurance costs.",
+      "key_commodities": ["crude_oil", "natural_gas", "shipping"],
+      "escalation_triggers": [
+        "Threat to close / mine the Strait of Hormuz",
+        "Direct strikes on oil facilities",
+        "Red Sea shipping disruption"
+      ]
+    },
+    {
+      "id": "china_taiwan",
+      "name": "China–Taiwan Tensions",
+      "parties": ["China", "Taiwan"],
+      "status": "latent",
+      "since": "1949",
+      "india_relevance": "high",
+      "summary": "Latent flashpoint. A blockade or conflict would disrupt global semiconductor supply and shipping. India both competes with and depends on this supply chain; also colours India–China border sentiment.",
+      "key_commodities": ["semiconductors", "electronics", "shipping"],
+      "escalation_triggers": [
+        "Blockade or quarantine of Taiwan",
+        "Semiconductor export controls",
+        "US–China military incident"
+      ]
+    },
+    {
+      "id": "india_china",
+      "name": "India–China Border Standoff",
+      "parties": ["India", "China"],
+      "status": "frozen",
+      "since": "2020",
+      "india_relevance": "very_high",
+      "summary": "Frozen border standoff (LAC). Direct-belligerent risk for India. Feeds import-substitution / 'China+1' and defense-indigenization themes; China is India's largest source of imports (electronics, APIs, machinery, rare earths).",
+      "key_commodities": ["electronics", "pharmaceuticals_api", "defense", "machinery", "rare_earths"],
+      "escalation_triggers": [
+        "LAC clash",
+        "Import curbs / retaliation on Chinese goods",
+        "Supply cut of active pharma ingredients (APIs) or rare earths"
+      ]
+    },
+    {
+      "id": "us_china_tech_war",
+      "name": "US–China Tech & Trade War",
+      "parties": ["United States", "China"],
+      "status": "active",
+      "since": "2018",
+      "india_relevance": "high",
+      "summary": "Escalating tech/trade decoupling — semiconductor export controls, tariffs, and rare-earth counter-measures. Accelerates supply chains shifting to India ('China+1'), but disrupts global electronics and chip availability.",
+      "key_commodities": ["semiconductors", "electronics", "rare_earths", "machinery"],
+      "escalation_triggers": [
+        "New chip / equipment export bans",
+        "Chinese rare-earth or gallium/germanium export curbs",
+        "Broad tariff escalation"
+      ]
+    },
+    {
+      "id": "red_sea_houthi",
+      "name": "Red Sea / Houthi Shipping Crisis",
+      "parties": ["Houthis", "Global shipping"],
+      "status": "active",
+      "since": "2023",
+      "india_relevance": "high",
+      "summary": "Attacks on Red Sea shipping force diversions around the Cape of Good Hope, raising freight, insurance and transit times. Directly hits India's export competitiveness (to Europe) and import costs.",
+      "key_commodities": ["shipping", "crude_oil"],
+      "escalation_triggers": [
+        "Wider attacks on commercial vessels",
+        "Suez Canal traffic collapse",
+        "Spillover to Bab-el-Mandeb closure"
+      ]
+    },
+    {
+      "id": "middle_east_opec",
+      "name": "Gulf / OPEC+ Supply Risk",
+      "parties": ["Saudi Arabia", "Iran"],
+      "status": "latent",
+      "since": "ongoing",
+      "india_relevance": "very_high",
+      "summary": "Gulf instability and OPEC+ production decisions swing crude prices. India imports a large share of crude from the Gulf; a supply cut or regional escalation is a direct oil-price shock.",
+      "key_commodities": ["crude_oil", "natural_gas", "fertilizers"],
+      "escalation_triggers": [
+        "OPEC+ deep production cuts",
+        "Attacks on Gulf oil infrastructure",
+        "Sanctions tightening on regional exporters"
+      ]
+    },
+    {
+      "id": "south_china_sea",
+      "name": "South China Sea Dispute",
+      "parties": ["China", "Philippines"],
+      "status": "latent",
+      "since": "ongoing",
+      "india_relevance": "moderate",
+      "summary": "Maritime disputes over a critical global shipping and trade artery. Escalation would disrupt East-Asian trade routes and electronics/component flows relevant to Indian manufacturers.",
+      "key_commodities": ["shipping", "electronics", "semiconductors"],
+      "escalation_triggers": [
+        "Naval clash",
+        "Blockade of shipping lanes",
+        "US freedom-of-navigation incident"
+      ]
+    },
+    {
+      "id": "venezuela_sanctions",
+      "name": "Venezuela Sanctions / Supply",
+      "parties": ["United States", "Venezuela"],
+      "status": "latent",
+      "since": "2019",
+      "india_relevance": "moderate",
+      "summary": "Sanctions swings on Venezuelan crude affect global heavy-crude supply. India historically bought Venezuelan barrels; easing/tightening shifts crude sourcing and prices.",
+      "key_commodities": ["crude_oil"],
+      "escalation_triggers": [
+        "Sanctions snap-back",
+        "Production collapse",
+        "Sanctions relief re-opening barrels"
+      ]
+    },
+    {
+      "id": "north_korea",
+      "name": "Korean Peninsula Tensions",
+      "parties": ["North Korea", "South Korea"],
+      "status": "latent",
+      "since": "1953",
+      "india_relevance": "low",
+      "summary": "Periodic missile tests and escalation risk. Limited direct India trade exposure, but a serious flare-up would trigger global risk-off, hitting emerging-market equities and the rupee.",
+      "key_commodities": ["semiconductors", "electronics"],
+      "escalation_triggers": [
+        "Nuclear test",
+        "Direct military clash",
+        "Disruption to South Korean chip/electronics output"
+      ]
+    },
+    {
+      "id": "bangladesh_instability",
+      "name": "Bangladesh Political Instability",
+      "parties": ["Bangladesh", "India"],
+      "status": "recurring",
+      "since": "2024",
+      "india_relevance": "high",
+      "summary": "Political turmoil in a key neighbour. Bangladesh is a global garment-export hub and India's rival in apparel; disruption there redirects orders to Indian textile exporters, while raising border, migration and regional-stability concerns for India.",
+      "key_commodities": ["textiles"],
+      "escalation_triggers": [
+        "Prolonged shutdown of Bangladeshi garment factories",
+        "Border / migration crisis",
+        "Trade or transit disruption"
+      ]
+    },
+    {
+      "id": "myanmar_conflict",
+      "name": "Myanmar Civil Conflict",
+      "parties": ["Myanmar Junta", "Resistance forces"],
+      "status": "active",
+      "since": "2021",
+      "india_relevance": "moderate",
+      "summary": "Ongoing civil war on India's north-eastern border. Limited direct market channel, but it pressures border security, the Kaladan connectivity project, and drives defense/border spending; also a source of instability and illicit trade in India's northeast.",
+      "key_commodities": ["defense"],
+      "escalation_triggers": [
+        "Spillover across the India–Myanmar border",
+        "Refugee influx into the northeast",
+        "Disruption of the Kaladan transit corridor"
+      ]
+    }
+  ]
+}
