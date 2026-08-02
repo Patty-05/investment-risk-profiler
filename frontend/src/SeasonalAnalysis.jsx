@@ -84,7 +84,7 @@ function SectionHeading({ children }) {
 }
 
 // Sector Heatmap — sector × month grid
-function SectorHeatmap({ heatmap }) {
+function SectorHeatmap({ heatmap, caption }) {
   if (!heatmap) return null;
   const { sectors, sector_names, sector_icons, months, matrix } = heatmap;
 
@@ -138,125 +138,146 @@ function SectorHeatmap({ heatmap }) {
       </table>
       <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 10,
         fontFamily: 'var(--font-mono)' }}>
-        Average monthly returns (%) across 10 years · Highlighted column = current month
+        {caption || 'Average monthly returns (%) across 10 years · Highlighted column = current month'}
       </p>
     </div>
   );
 }
 
-// Top 3 picks cards
+// Top 3 picks cards — market-relative (excess vs Nifty), significance-tested
 function TopPicks({ picks, currentMonth }) {
-  if (!picks || picks.length === 0) return null;
+  if (!picks || picks.length === 0) {
+    return (
+      <div style={{
+        padding: '18px 20px', background: 'var(--surface-2)',
+        border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
+        color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.6
+      }}>
+        No sector shows a positive market-relative edge this month — historically,
+        none reliably beats the Nifty in {currentMonth}. That's an honest
+        "no seasonal tailwind" signal, not a bug.
+      </div>
+    );
+  }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: 14 }}>
       {picks.map((pick, i) => {
         const cf = confColor(pick.confidence);
+        const ex = pick.excess_return;
         return (
           <div key={pick.sector} style={{
             background: 'var(--surface-2)',
             border: `1px solid ${i === 0 ? 'rgba(0,229,160,0.35)' : 'var(--border-2)'}`,
-            borderRadius: 'var(--radius-lg)',
-            padding: '20px 18px',
+            borderRadius: 'var(--radius-lg)', padding: '20px 18px',
             position: 'relative', overflow: 'hidden',
-            transition: 'transform 0.2s',
           }}>
-            {/* Rank badge */}
-            <div style={{
-              position: 'absolute', top: 12, right: 14,
+            <div style={{ position: 'absolute', top: 12, right: 14,
               fontFamily: 'var(--font-mono)', fontSize: '1.4rem', fontWeight: 700,
-              color: i === 0 ? 'var(--accent)' : 'var(--text-muted)', opacity: 0.5
-            }}>#{i + 1}</div>
-
-            {/* Top accent line for #1 */}
-            {i === 0 && (
-              <div style={{
-                position: 'absolute', top: 0, left: 0, right: 0, height: 2,
-                background: 'linear-gradient(90deg, #00ffcc, #1e90ff, transparent)'
-              }} />
-            )}
+              color: i === 0 ? 'var(--accent)' : 'var(--text-muted)', opacity: 0.5 }}>#{i + 1}</div>
 
             <div style={{ fontSize: '1.6rem', marginBottom: 8 }}>{pick.icon}</div>
             <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700,
-              fontSize: '0.95rem', color: 'var(--text-primary)', marginBottom: 4 }}>
-              {pick.name}
-            </div>
+              fontSize: '0.95rem', color: 'var(--text-primary)', marginBottom: 4 }}>{pick.name}</div>
             <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)',
-              fontFamily: 'var(--font-mono)', marginBottom: 14 }}>
-              {pick.sector}
-            </div>
+              fontFamily: 'var(--font-mono)', marginBottom: 14 }}>{pick.sector}</div>
 
-            {/* Stats row */}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+            {/* Stats: excess vs Nifty · beat-market rate · significance */}
+            <div style={{ display: 'flex', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
               <div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)',
-                  textTransform: 'uppercase', letterSpacing: '0.06em' }}>Avg Return</div>
-                <div style={{
-                  fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '1.1rem',
-                  color: pick.avg_return >= 0 ? 'var(--green)' : 'var(--red)'
-                }}>
-                  {pick.avg_return >= 0 ? '+' : ''}{pick.avg_return}%
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)',
-                  textTransform: 'uppercase', letterSpacing: '0.06em' }}>Win Rate</div>
+                <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em' }}>vs Nifty</div>
                 <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '1.1rem',
-                  color: 'var(--text-primary)' }}>
-                  {pick.positive_rate}%
+                  color: ex >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                  {ex >= 0 ? '+' : ''}{ex}%<span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>/mo</span>
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)',
-                  textTransform: 'uppercase', letterSpacing: '0.06em' }}>Momentum</div>
-                <div style={{
-                  fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '1.1rem',
-                  color: pick.momentum >= 0 ? 'var(--green)' : 'var(--red)'
-                }}>
-                  {pick.momentum >= 0 ? '↑' : '↓'} {Math.abs(pick.momentum)}
+                <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em' }}>Beat Mkt</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '1.1rem',
+                  color: 'var(--text-primary)' }}>{pick.excess_win_rate}%</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em' }}>Signif.</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '1.1rem',
+                  color: pick.significant ? 'var(--green)' : 'var(--text-muted)' }}>
+                  {pick.significant ? (pick.sig_stars || '✓') : '—'}
+                  <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginLeft: 4 }}>p={pick.p_value}</span>
                 </div>
               </div>
             </div>
 
-            {/* Confidence badge */}
-            <div style={{
-              display: 'inline-block', padding: '3px 10px', borderRadius: 20,
-              background: cf.bg, color: cf.color,
-              border: `1px solid ${cf.border}`,
+            <div style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 20,
+              background: cf.bg, color: cf.color, border: `1px solid ${cf.border}`,
               fontSize: '0.7rem', fontWeight: 600, fontFamily: 'var(--font-mono)',
-              letterSpacing: '0.05em', marginBottom: 12
-            }}>
+              letterSpacing: '0.05em', marginBottom: 12 }}>
               {pick.confidence} Confidence
             </div>
 
-            {/* Best months pills */}
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)',
-                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-                Best Months
+            {/* Indian calendar driver */}
+            {pick.driver && (
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)',
+                fontFamily: 'var(--font-mono)', lineHeight: 1.5, marginBottom: 12,
+                display: 'flex', gap: 6 }}>
+                <span>📅</span><span>{pick.driver}</span>
               </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {pick.best_months.map(m => (
-                  <span key={m} style={{
-                    padding: '2px 8px', borderRadius: 4,
-                    background: m === currentMonth
-                      ? 'rgba(0,229,160,0.2)' : 'var(--surface-3)',
-                    color: m === currentMonth ? 'var(--accent)' : 'var(--text-secondary)',
-                    border: m === currentMonth ? '1px solid rgba(0,229,160,0.3)' : '1px solid var(--border)',
-                    fontSize: '0.72rem', fontFamily: 'var(--font-mono)', fontWeight: 500
-                  }}>{m}</span>
-                ))}
-              </div>
-            </div>
+            )}
 
-            {/* Reason */}
-            <div style={{
-              fontSize: '0.75rem', color: 'var(--text-secondary)',
+            <div style={{ fontSize: '0.73rem', color: 'var(--text-secondary)',
               fontFamily: 'var(--font-mono)', lineHeight: 1.6,
-              borderTop: '1px solid var(--border)', paddingTop: 10
-            }}>
+              borderTop: '1px solid var(--border)', paddingTop: 10 }}>
               {pick.reason}
             </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+// Statistically significant seasonal edges (the novel honest highlight)
+function SignificantEdges({ edges }) {
+  if (!edges || edges.length === 0) {
+    return (
+      <div style={{ padding: '16px 18px', background: 'var(--surface-2)',
+        border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
+        color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+        No sector-month pattern clears the significance bar (p &lt; 0.10) in this window —
+        an honest reminder that most "seasonality" is noise.
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px,1fr))', gap: 10 }}>
+      {edges.map((e, i) => {
+        const good = e.direction === 'outperform';
+        return (
+          <div key={i} style={{
+            background: 'var(--surface-2)',
+            border: `1px solid ${good ? 'rgba(46,213,115,0.3)' : 'rgba(255,71,87,0.3)'}`,
+            borderLeft: `3px solid ${good ? 'var(--green)' : 'var(--red)'}`,
+            borderRadius: 'var(--radius)', padding: '12px 14px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+                {e.icon} {e.sector} · {e.month}
+              </span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.9rem',
+                color: good ? 'var(--green)' : 'var(--red)' }}>
+                {e.excess >= 0 ? '+' : ''}{e.excess}% {e.stars}
+              </span>
+            </div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: 6 }}>
+              {good ? 'Beats' : 'Trails'} Nifty · t={e.t_stat} · p={e.p_value} · {e.win_rate}% of years
+            </div>
+            {e.driver && (
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                📅 {e.driver}
+              </div>
+            )}
           </div>
         );
       })}
@@ -508,16 +529,16 @@ function SectorDetailCard({ sectorKey, stats, currentMonth, expanded, onToggle }
   );
 }
 
-// Current month ranking bar chart
+// Current month ranking — by market-relative edge (excess vs Nifty)
 function CurrentMonthRanking({ rankings, currentMonth }) {
   if (!rankings || rankings.length === 0) return null;
-  const maxAbs = Math.max(...rankings.map(r => Math.abs(r.avg_return)), 0.1);
+  const maxAbs = Math.max(...rankings.map(r => Math.abs(r.excess_return)), 0.1);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {rankings.map((r, i) => {
-        const pct = Math.min(100, (Math.abs(r.avg_return) / maxAbs) * 100);
-        const isPositive = r.avg_return >= 0;
+      {rankings.map((r) => {
+        const pct = Math.min(100, (Math.abs(r.excess_return) / maxAbs) * 100);
+        const isPositive = r.excess_return >= 0;
         return (
           <div key={r.sector}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
@@ -525,7 +546,7 @@ function CurrentMonthRanking({ rankings, currentMonth }) {
               <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)',
                 fontFamily: 'var(--font-mono)', minWidth: 90 }}>{r.sector}</span>
               <div style={{ flex: 1, height: 10, background: 'var(--surface-3)',
-                borderRadius: 5, overflow: 'hidden' }}>
+                borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
                 <div style={{
                   width: `${pct}%`, height: '100%', borderRadius: 5,
                   background: isPositive
@@ -534,16 +555,14 @@ function CurrentMonthRanking({ rankings, currentMonth }) {
                   transition: 'width 0.8s ease'
                 }} />
               </div>
-              <span style={{
-                fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700,
-                color: isPositive ? 'var(--green)' : 'var(--red)',
-                minWidth: 52, textAlign: 'right'
-              }}>
-                {isPositive ? '+' : ''}{r.avg_return}%
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700,
+                color: isPositive ? 'var(--green)' : 'var(--red)', minWidth: 58, textAlign: 'right' }}>
+                {isPositive ? '+' : ''}{r.excess_return}%
+                {r.sig_stars && <span style={{ color: 'var(--accent)', marginLeft: 2 }}>{r.sig_stars}</span>}
               </span>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)',
+              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)',
                 fontFamily: 'var(--font-mono)', minWidth: 40 }}>
-                {r.positive_rate}%↑
+                {r.excess_win_rate}%
               </span>
             </div>
           </div>
@@ -551,7 +570,8 @@ function CurrentMonthRanking({ rankings, currentMonth }) {
       })}
       <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)',
         fontFamily: 'var(--font-mono)', marginTop: 4 }}>
-        Historical avg return in {currentMonth} · Win rate = % of years with positive return
+        Excess return vs Nifty 50 in {currentMonth} · right column = % of years beating the market ·
+        <span style={{ color: 'var(--accent)' }}> * </span>= statistically significant (p&lt;0.10)
       </p>
     </div>
   );
@@ -565,6 +585,7 @@ export default function SeasonalAnalysis() {
   const [error, setError]         = useState(null);
   const [expandedSector, setExpandedSector] = useState(null);
   const [activeView, setActiveView] = useState('overview'); // overview | heatmap | sectors | compare
+  const [heatmapMode, setHeatmapMode] = useState('excess'); // excess | raw
   const hasFetched = useRef(false);
 
   const fetchData = async (refresh = false) => {
@@ -601,8 +622,11 @@ export default function SeasonalAnalysis() {
   return (
     <div>
       <p>
-        Historical seasonal patterns of Indian equity sectors — 10 years of data (2014–2024).
-        Identifies the best months and quarters to consider each sector.
+        Market-relative seasonal patterns of Indian equity sectors over {d?.years_analyzed || 10} years.
+        Instead of raw returns (mostly market beta), it measures each sector's
+        <strong style={{ color: 'var(--text-primary)' }}> excess return vs the Nifty 50</strong> and
+        <strong style={{ color: 'var(--text-primary)' }}> t-tests it for significance</strong> — so it
+        surfaces genuine sector rotation, not noise, tagged with the Indian seasonal calendar.
       </p>
 
       {/* Controls row */}
@@ -621,10 +645,23 @@ export default function SeasonalAnalysis() {
         {d && (
           <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)',
             fontFamily: 'var(--font-mono)' }}>
-            {d.years_analyzed}y data · Current: {d.current_month} {d.current_quarter}
+            {d.years_analyzed}y · vs {d.benchmark || 'Nifty 50'} · Current: {d.current_month} {d.current_quarter}
           </span>
         )}
       </div>
+
+      {/* Current-month Indian calendar driver banner */}
+      {d && d.current_driver && (
+        <div style={{
+          marginTop: 14, padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'center',
+          background: 'rgba(0,229,160,0.06)', border: '1px solid rgba(0,229,160,0.2)',
+          borderRadius: 'var(--radius)', fontSize: '0.8rem', color: 'var(--text-secondary)',
+          fontFamily: 'var(--font-mono)', lineHeight: 1.5
+        }}>
+          <span style={{ fontSize: '1rem' }}>📅</span>
+          <span><strong style={{ color: 'var(--text-primary)' }}>{d.current_month} seasonal backdrop:</strong> {d.current_driver}</span>
+        </div>
+      )}
 
       {error && (
         <div className="error" style={{ marginTop: 16 }}>{error}</div>
@@ -660,11 +697,21 @@ export default function SeasonalAnalysis() {
             <div style={{ marginTop: 20 }}>
 
               {/* Top 3 picks */}
-              <SectionHeading>🏆 Top 3 Sector Picks for {currentMonth}</SectionHeading>
+              <SectionHeading>🏆 Top Sector Picks for {currentMonth} · vs Nifty</SectionHeading>
               <TopPicks picks={d.top_picks} currentMonth={currentMonth} />
 
+              {/* Statistically significant seasonal edges — the novel highlight */}
+              <SectionHeading>🔬 Statistically Significant Seasonal Edges (year-round)</SectionHeading>
+              <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)', marginTop: -6, marginBottom: 12, lineHeight: 1.6 }}>
+                The sector-month patterns that actually clear a significance test (p&lt;0.10) on
+                10 years of excess returns — real signal, ranked by strength. Most "seasonality"
+                doesn't make this list, and that's the point.
+              </p>
+              <SignificantEdges edges={d.significant_edges} />
+
               {/* Current month ranking */}
-              <SectionHeading>📈 All Sectors · {currentMonth} Historical Performance</SectionHeading>
+              <SectionHeading>📈 All Sectors · {currentMonth} Market-Relative Edge</SectionHeading>
               <div style={{
                 background: 'var(--surface-2)', border: '1px solid var(--border-2)',
                 borderRadius: 'var(--radius-lg)', padding: '20px 22px'
@@ -720,12 +767,39 @@ export default function SeasonalAnalysis() {
           {/* ── HEATMAP ── */}
           {activeView === 'heatmap' && (
             <div style={{ marginTop: 20 }}>
-              <SectionHeading>🟩 Sector × Month Return Heatmap (10-Year Avg)</SectionHeading>
+              <SectionHeading>
+                🟩 Sector × Month Heatmap · {heatmapMode === 'excess' ? 'Market-Relative (vs Nifty)' : 'Raw Returns'}
+              </SectionHeading>
+
+              {/* Raw vs Excess toggle */}
+              <div style={{ display: 'inline-flex', background: 'var(--surface-2)',
+                border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 3, gap: 3, marginBottom: 14 }}>
+                {[['excess', 'Market-relative (excess)'], ['raw', 'Raw returns']].map(([key, label]) => (
+                  <button key={key} onClick={() => setHeatmapMode(key)} style={{
+                    background: heatmapMode === key ? 'var(--accent)' : 'transparent',
+                    color: heatmapMode === key ? '#012' : 'var(--text-secondary)',
+                    border: 'none', borderRadius: 7, padding: '6px 14px', cursor: 'pointer',
+                    fontSize: '0.78rem', fontWeight: 600, fontFamily: 'var(--font-mono)'
+                  }}>{label}</button>
+                ))}
+              </div>
+              {heatmapMode === 'excess' && (
+                <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)',
+                  margin: '-4px 0 12px', lineHeight: 1.6 }}>
+                  Each cell = sector return minus Nifty for that month (10y avg). Green = the sector
+                  historically <em>beats the market</em> that month; red = lags. This is the de-noised view —
+                  notice it's no longer "green everywhere in April."
+                </p>
+              )}
+
               <div style={{
                 background: 'var(--surface-2)', border: '1px solid var(--border-2)',
                 borderRadius: 'var(--radius-lg)', padding: '20px 18px'
               }}>
-                <SectorHeatmap heatmap={d.heatmap} />
+                <SectorHeatmap heatmap={heatmapMode === 'excess' ? d.excess_heatmap : d.heatmap}
+                  caption={heatmapMode === 'excess'
+                    ? 'Average monthly EXCESS return vs Nifty 50 (%) · 10 years · Highlighted column = current month'
+                    : 'Average monthly returns (%) across 10 years · Highlighted column = current month'} />
               </div>
 
               {/* Legend */}

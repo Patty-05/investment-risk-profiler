@@ -1,12 +1,26 @@
 """
-Indian Equity Seasonal Analysis Module
-Analyses monthly/quarterly performance patterns of Indian sector indices
-over 10 years (2014-2024) and recommends sectors based on historical seasonality.
+Indian Equity Seasonal Analysis Module (market-relative + significance-tested).
+
+Novel/refined approach vs. naive monthly-average seasonality:
+  1. MARKET-RELATIVE (excess) returns — each sector's monthly return minus the
+     Nifty benchmark. This strips out market beta so we measure true sector
+     ROTATION (which sector beats the market in a month), not just "which goes
+     up" (which is mostly the whole market rising, e.g. every sector peaking in
+     April on new-FY optimism).
+  2. STATISTICAL SIGNIFICANCE — a one-sample t-test on each sector-month's
+     excess returns. Patterns are only surfaced as reliable when they clear a
+     significance bar, and the ranking uses a t-statistic (signal-to-noise
+     "seasonal edge") instead of an arbitrary composite.
+  3. INDIAN SEASONAL-EVENT CALENDAR — each recommendation is tagged with the
+     real India-specific driver (Budget, FY-end, monsoon, Diwali/Samvat festive
+     demand, earnings seasons).
+
+Educational analysis, not financial advice.
 """
 
 import numpy as np
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime
 import traceback
 
 try:
@@ -14,122 +28,123 @@ try:
     _YF_AVAILABLE = True
 except ImportError:
     _YF_AVAILABLE = False
-    print("⚠️ yfinance not installed — pip install yfinance")
+    print("yfinance not installed - pip install yfinance")
 
+try:
+    from scipy import stats as _scipy_stats
+    _SCIPY = True
+except ImportError:
+    _SCIPY = False
+
+
+BENCHMARK_TICKER = "^NSEI"   # Nifty 50 — the market benchmark for excess returns
 
 # ── Sector definitions ────────────────────────────────────────────────────────
-# Primary ticker + fallback tickers for each sector
 SECTOR_CONFIG = {
-    "IT": {
-        "name": "Information Technology",
-        "tickers": ["^CNXIT", "INFY.NS", "TCS.NS"],
-        "color": "#3b82f6",
-        "components": ["TCS.NS", "INFY.NS", "HCLTECH.NS", "WIPRO.NS", "TECHM.NS", "LTIM.NS"],
-        "icon": "💻"
-    },
-    "Banking": {
-        "name": "Banking & Finance",
-        "tickers": ["^NSEBANK", "HDFCBANK.NS", "ICICIBANK.NS"],
-        "color": "#10b981",
-        "components": ["HDFCBANK.NS", "ICICIBANK.NS", "KOTAKBANK.NS", "AXISBANK.NS", "SBIN.NS", "BAJFINANCE.NS"],
-        "icon": "🏦"
-    },
-    "FMCG": {
-        "name": "Fast Moving Consumer Goods",
-        "tickers": ["^CNXFMCG", "HINDUNILVR.NS", "NESTLEIND.NS"],
-        "color": "#f59e0b",
-        "components": ["HINDUNILVR.NS", "NESTLEIND.NS", "BRITANNIA.NS", "DABUR.NS", "MARICO.NS", "GODREJCP.NS"],
-        "icon": "🛒"
-    },
-    "Auto": {
-        "name": "Automobile",
-        "tickers": ["^CNXAUTO", "MARUTI.NS", "TATAMOTORS.NS"],
-        "color": "#ef4444",
-        "components": ["MARUTI.NS", "TATAMOTORS.NS", "M&M.NS", "BAJAJ-AUTO.NS", "HEROMOTOCO.NS", "EICHERMOT.NS"],
-        "icon": "🚗"
-    },
-    "Pharma": {
-        "name": "Pharmaceuticals",
-        "tickers": ["^CNXPHARMA", "SUNPHARMA.NS", "DRREDDY.NS"],
-        "color": "#8b5cf6",
-        "components": ["SUNPHARMA.NS", "DRREDDY.NS", "CIPLA.NS", "DIVISLAB.NS", "AUROPHARMA.NS", "TORNTPHARM.NS"],
-        "icon": "💊"
-    },
-    "Realty": {
-        "name": "Real Estate",
-        "tickers": ["^CNXREALTY", "DLF.NS", "GODREJPROP.NS"],
-        "color": "#ec4899",
-        "components": ["DLF.NS", "GODREJPROP.NS", "OBEROIRLTY.NS", "PRESTIGE.NS", "PHOENIXLTD.NS", "SOBHA.NS"],
-        "icon": "🏗️"
-    },
-    "Hospitality": {
-        "name": "Hospitality & Tourism",
-        "tickers": ["INDHOTEL.NS", "LEMONTRE.NS", "CHALET.NS"],
-        "color": "#f97316",
-        "components": ["INDHOTEL.NS", "LEMONTRE.NS", "CHALET.NS", "EIHOTEL.NS", "MAHINDRAHOLIDAYS.NS", "THOMASCOOK.NS"],
-        "icon": "🏨"
-    },
-    "Energy": {
-        "name": "Energy & Power",
-        "tickers": ["^CNXENERGY", "RELIANCE.NS", "ONGC.NS"],
-        "color": "#eab308",
-        "components": ["RELIANCE.NS", "ONGC.NS", "NTPC.NS", "POWERGRID.NS", "COALINDIA.NS", "BPCL.NS"],
-        "icon": "⚡"
-    },
-    "Metal": {
-        "name": "Metals & Mining",
-        "tickers": ["^CNXMETAL", "TATASTEEL.NS", "HINDALCO.NS"],
-        "color": "#6b7280",
-        "components": ["TATASTEEL.NS", "HINDALCO.NS", "JSWSTEEL.NS", "VEDL.NS", "NMDC.NS", "SAIL.NS"],
-        "icon": "⛏️"
-    },
-    "Infra": {
-        "name": "Infrastructure",
-        "tickers": ["^CNXINFRA", "LT.NS", "ADANIPORTS.NS"],
-        "color": "#84cc16",
-        "components": ["LT.NS", "ADANIPORTS.NS", "BHARTIARTL.NS", "ULTRACEMCO.NS", "GRASIM.NS", "SIEMENS.NS"],
-        "icon": "🏗️"
-    }
+    "IT": {"name": "Information Technology", "tickers": ["^CNXIT", "INFY.NS", "TCS.NS"],
+           "color": "#3b82f6", "icon": "💻",
+           "components": ["TCS.NS", "INFY.NS", "HCLTECH.NS", "WIPRO.NS", "TECHM.NS", "LTIM.NS"]},
+    "Banking": {"name": "Banking & Finance", "tickers": ["^NSEBANK", "HDFCBANK.NS", "ICICIBANK.NS"],
+                "color": "#10b981", "icon": "🏦",
+                "components": ["HDFCBANK.NS", "ICICIBANK.NS", "KOTAKBANK.NS", "AXISBANK.NS", "SBIN.NS", "BAJFINANCE.NS"]},
+    "FMCG": {"name": "Fast Moving Consumer Goods", "tickers": ["^CNXFMCG", "HINDUNILVR.NS", "NESTLEIND.NS"],
+             "color": "#f59e0b", "icon": "🛒",
+             "components": ["HINDUNILVR.NS", "NESTLEIND.NS", "BRITANNIA.NS", "DABUR.NS", "MARICO.NS", "GODREJCP.NS"]},
+    "Auto": {"name": "Automobile", "tickers": ["^CNXAUTO", "MARUTI.NS", "TATAMOTORS.NS"],
+             "color": "#ef4444", "icon": "🚗",
+             "components": ["MARUTI.NS", "M&M.NS", "BAJAJ-AUTO.NS", "HEROMOTOCO.NS", "EICHERMOT.NS", "TVSMOTOR.NS"]},
+    "Pharma": {"name": "Pharmaceuticals", "tickers": ["^CNXPHARMA", "SUNPHARMA.NS", "DRREDDY.NS"],
+               "color": "#8b5cf6", "icon": "💊",
+               "components": ["SUNPHARMA.NS", "DRREDDY.NS", "CIPLA.NS", "DIVISLAB.NS", "AUROPHARMA.NS", "TORNTPHARM.NS"]},
+    "Realty": {"name": "Real Estate", "tickers": ["^CNXREALTY", "DLF.NS", "GODREJPROP.NS"],
+               "color": "#ec4899", "icon": "🏗️",
+               "components": ["DLF.NS", "GODREJPROP.NS", "OBEROIRLTY.NS", "PRESTIGE.NS", "PHOENIXLTD.NS", "BRIGADE.NS"]},
+    "Hospitality": {"name": "Hospitality & Tourism", "tickers": ["INDHOTEL.NS", "LEMONTREE.NS", "CHALET.NS"],
+                    "color": "#f97316", "icon": "🏨",
+                    "components": ["INDHOTEL.NS", "LEMONTREE.NS", "CHALET.NS", "EIHOTEL.NS", "MHRIL.NS", "THOMASCOOK.NS"]},
+    "Energy": {"name": "Energy & Power", "tickers": ["^CNXENERGY", "RELIANCE.NS", "ONGC.NS"],
+               "color": "#eab308", "icon": "⚡",
+               "components": ["RELIANCE.NS", "ONGC.NS", "NTPC.NS", "POWERGRID.NS", "COALINDIA.NS", "BPCL.NS"]},
+    "Metal": {"name": "Metals & Mining", "tickers": ["^CNXMETAL", "TATASTEEL.NS", "HINDALCO.NS"],
+              "color": "#6b7280", "icon": "⛏️",
+              "components": ["TATASTEEL.NS", "HINDALCO.NS", "JSWSTEEL.NS", "VEDL.NS", "NMDC.NS", "SAIL.NS"]},
+    "Infra": {"name": "Infrastructure", "tickers": ["^CNXINFRA", "LT.NS", "ADANIPORTS.NS"],
+              "color": "#84cc16", "icon": "🏗️",
+              "components": ["LT.NS", "ADANIPORTS.NS", "BHARTIARTL.NS", "ULTRACEMCO.NS", "GRASIM.NS", "SIEMENS.NS"]},
 }
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-QUARTERS = ["Q1 (Jan-Mar)", "Q2 (Apr-Jun)", "Q3 (Jul-Sep)", "Q4 (Oct-Dec)"]
+# ── Indian seasonal-event calendar ────────────────────────────────────────────
+MONTH_DRIVERS = {
+    1:  "January effect; FII inflows resume, Q3 (Dec) earnings begin",
+    2:  "Union Budget — policy-sensitive sectors swing on allocations",
+    3:  "Financial year-end — window dressing, tax flows, advance-tax squeeze",
+    4:  "New FY optimism + Q4 earnings — historically the market's strongest month",
+    5:  "'Sell in May'; pre-monsoon and election-cycle caution",
+    6:  "Monsoon onset — rural-demand sectors in focus",
+    7:  "Q1 earnings season; monsoon progress drives agri/consumer demand",
+    8:  "Monsoon peak; festive stocking begins",
+    9:  "Quarter-end; pre-festive positioning",
+    10: "Festive season + Diwali/Muhurat trading — consumption demand peaks",
+    11: "Samvat new-year momentum; festive tailwind continues",
+    12: "Year-end 'Santa' drift on thin holiday volumes",
+}
+
+SECTOR_MONTH_DRIVERS = {
+    ("Auto", 10): "Festive vehicle demand peaks (Navratri → Diwali)",
+    ("Auto", 11): "Post-Diwali dispatches and rural festive demand",
+    ("Auto", 6):  "Monsoon sets the tone for rural two-wheeler/tractor demand",
+    ("FMCG", 10): "Festive consumption and gifting demand",
+    ("FMCG", 6):  "Monsoon revives rural FMCG demand",
+    ("FMCG", 7):  "Monsoon-led rural demand recovery",
+    ("Realty", 10): "Festive property launches and auspicious-buying bookings",
+    ("IT", 1):    "Dec-quarter results + FY guidance; USD/INR seasonality",
+    ("IT", 7):    "Q1 results and deal-pipeline commentary",
+    ("Banking", 3): "FY-end credit push and advances growth",
+    ("Banking", 4): "New-FY credit demand and clean-up rally",
+    ("Metal", 4): "New-FY infra/capex demand; global restocking",
+    ("Energy", 4): "Summer power-demand ramp-up",
+    ("Energy", 5): "Peak summer electricity demand",
+    ("Pharma", 7): "Monsoon-season acute-therapy demand",
+    ("Hospitality", 10): "Festive and wedding-season travel demand",
+    ("Hospitality", 12): "Year-end holiday travel peak",
+    ("Hospitality", 4): "Summer-vacation travel season",
+    ("Infra", 3): "FY-end government capex push",
+}
+
+
+def _sig_stars(p):
+    if p is None:
+        return ""
+    if p < 0.01:
+        return "***"
+    if p < 0.05:
+        return "**"
+    if p < 0.10:
+        return "*"
+    return ""
 
 
 class IndianSeasonalAnalyzer:
-    """
-    Fetches 10 years of Indian sector data and computes:
-    - Monthly average returns per sector
-    - Quarterly patterns
-    - Best/worst months
-    - Current month recommendation
-    - Top 3 sector picks
-    """
-
     def __init__(self, years: int = 10):
-        self.years     = years
-        self.end_date  = datetime.now()
+        self.years = years
+        self.end_date = datetime.now()
         self.start_date = datetime(self.end_date.year - years, 1, 1)
-        self._cache    = {}
+        self._cache = {}
+        self._bench_monthly = None  # cached benchmark monthly returns
 
     # ── Data fetching ──────────────────────────────────────────────────────
-
-    def _fetch_ticker(self, ticker: str) -> pd.DataFrame | None:
-        """Fetch OHLCV data for a single ticker with caching."""
+    def _fetch_ticker(self, ticker: str):
         if ticker in self._cache:
             return self._cache[ticker]
         if not _YF_AVAILABLE:
             return None
         try:
-            df = yf.download(
-                ticker,
-                start=self.start_date.strftime("%Y-%m-%d"),
-                end=self.end_date.strftime("%Y-%m-%d"),
-                progress=False,
-                auto_adjust=True
-            )
+            df = yf.download(ticker, start=self.start_date.strftime("%Y-%m-%d"),
+                             end=self.end_date.strftime("%Y-%m-%d"),
+                             progress=False, auto_adjust=True)
             if df is None or len(df) < 50:
                 return None
             if isinstance(df.columns, pd.MultiIndex):
@@ -137,339 +152,302 @@ class IndianSeasonalAnalyzer:
             self._cache[ticker] = df
             return df
         except Exception as e:
-            print(f"  ⚠️ Failed to fetch {ticker}: {e}")
+            print(f"  Failed to fetch {ticker}: {e}")
             return None
 
-    def _fetch_sector_data(self, sector_key: str) -> pd.DataFrame | None:
-        """Try each ticker for a sector until one succeeds."""
-        config  = SECTOR_CONFIG[sector_key]
-        tickers = config["tickers"]
-
-        for ticker in tickers:
+    def _fetch_sector_data(self, sector_key: str):
+        config = SECTOR_CONFIG[sector_key]
+        for ticker in config["tickers"]:
             df = self._fetch_ticker(ticker)
             if df is not None and len(df) >= 50:
-                print(f"  ✅ {sector_key}: loaded from {ticker} ({len(df)} rows)")
+                print(f"  [ok] {sector_key}: {ticker} ({len(df)} rows)")
                 return df
-
-        # Fallback: average of component stocks
-        print(f"  ⚠️ {sector_key}: index failed, trying component average...")
-        frames = []
-        for comp in config["components"][:4]:
-            df = self._fetch_ticker(comp)
-            if df is not None:
-                frames.append(df["Close"])
-
+        # Fallback: equal-weight average of component closes
+        frames = [self._fetch_ticker(c)["Close"] for c in config["components"][:4]
+                  if self._fetch_ticker(c) is not None]
         if frames:
             combined = pd.concat(frames, axis=1).dropna(how="all")
-            avg_close = combined.mean(axis=1)
-            result = pd.DataFrame({"Close": avg_close})
-            result.index = combined.index
-            print(f"  ✅ {sector_key}: built from {len(frames)} components")
-            return result
-
-        print(f"  ❌ {sector_key}: no data available")
+            return pd.DataFrame({"Close": combined.mean(axis=1)}, index=combined.index)
+        print(f"  [err] {sector_key}: no data")
         return None
 
-    # ── Monthly return computation ─────────────────────────────────────────
-
-    def _compute_monthly_returns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Compute monthly returns from daily OHLCV data.
-        Returns DataFrame with columns: year, month, return_pct
-        """
+    # ── Monthly return helpers ─────────────────────────────────────────────
+    @staticmethod
+    def _monthly_returns(df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         df.index = pd.to_datetime(df.index)
-        # Resample to monthly — use last close of each month
         monthly = df["Close"].resample("ME").last()
-        monthly_returns = monthly.pct_change().dropna() * 100
+        r = monthly.pct_change().dropna() * 100
+        return pd.DataFrame({"year": r.index.year, "month": r.index.month, "ret": r.values})
 
-        result = pd.DataFrame({
-            "year":       monthly_returns.index.year,
-            "month":      monthly_returns.index.month,
-            "return_pct": monthly_returns.values
-        })
-        return result
+    def _benchmark_monthly(self) -> pd.DataFrame:
+        if self._bench_monthly is not None:
+            return self._bench_monthly
+        df = self._fetch_ticker(BENCHMARK_TICKER)
+        if df is None:
+            # Fallback benchmark: a broad basket if the index fails
+            df = self._fetch_sector_data("Banking")
+        bm = self._monthly_returns(df).rename(columns={"ret": "bench"})
+        self._bench_monthly = bm
+        return bm
 
-    def _aggregate_monthly(self, monthly_df: pd.DataFrame) -> dict:
-        """
-        Aggregate monthly returns into:
-        - avg_by_month: {1..12} -> avg return
-        - std_by_month: {1..12} -> std dev
-        - positive_rate: {1..12} -> % of years with positive return
-        """
-        avg_by_month      = {}
-        std_by_month      = {}
-        positive_rate     = {}
-        sample_count      = {}
-        year_by_month     = {}   # {month: [return per year]}
+    # ── Aggregation with excess + significance ─────────────────────────────
+    def _aggregate(self, sector_monthly: pd.DataFrame, bench_monthly: pd.DataFrame) -> dict:
+        merged = sector_monthly.merge(bench_monthly, on=["year", "month"], how="inner")
+        merged["excess"] = merged["ret"] - merged["bench"]
+
+        avg, std, pos, samp, yr = {}, {}, {}, {}, {}
+        ex_avg, ex_std, ex_win, t_by, p_by, sig_by = {}, {}, {}, {}, {}, {}
 
         for m in range(1, 13):
-            subset = monthly_df[monthly_df["month"] == m]["return_pct"]
-            if len(subset) == 0:
-                avg_by_month[m]  = 0.0
-                std_by_month[m]  = 0.0
-                positive_rate[m] = 50.0
-                sample_count[m]  = 0
-                year_by_month[m] = []
+            raw = merged[merged["month"] == m]["ret"]
+            exc = merged[merged["month"] == m]["excess"]
+            n = len(raw)
+            samp[m] = int(n)
+            if n == 0:
+                avg[m] = std[m] = ex_avg[m] = ex_std[m] = 0.0
+                pos[m] = ex_win[m] = 50.0
+                t_by[m] = 0.0; p_by[m] = 1.0; sig_by[m] = False; yr[m] = []
+                continue
+            avg[m] = round(float(raw.mean()), 2)
+            std[m] = round(float(raw.std()), 2)
+            pos[m] = round(float((raw > 0).mean() * 100), 1)
+            yr[m] = [round(float(v), 2) for v in raw.values]
+            ex_avg[m] = round(float(exc.mean()), 2)
+            ex_std[m] = round(float(exc.std()), 2)
+            ex_win[m] = round(float((exc > 0).mean() * 100), 1)   # % of years beating the market
+            # one-sample t-test: is mean excess != 0?
+            if _SCIPY and n >= 3 and exc.std() > 1e-9:
+                try:
+                    t, p = _scipy_stats.ttest_1samp(exc, 0.0)
+                    t_by[m] = round(float(t), 2)
+                    p_by[m] = round(float(p), 4)
+                except Exception:
+                    t_by[m], p_by[m] = 0.0, 1.0
             else:
-                avg_by_month[m]  = round(float(subset.mean()), 2)
-                std_by_month[m]  = round(float(subset.std()), 2)
-                positive_rate[m] = round(float((subset > 0).mean() * 100), 1)
-                sample_count[m]  = int(len(subset))
-                year_by_month[m] = [round(float(v), 2) for v in subset.values]
+                t_by[m], p_by[m] = 0.0, 1.0
+            sig_by[m] = bool(p_by[m] < 0.10)
 
         return {
-            "avg_by_month":  avg_by_month,
-            "std_by_month":  std_by_month,
-            "positive_rate": positive_rate,
-            "sample_count":  sample_count,
-            "year_by_month": year_by_month
+            "avg_by_month": avg, "std_by_month": std, "positive_rate": pos,
+            "sample_count": samp, "year_by_month": yr,
+            "excess_by_month": ex_avg, "excess_std_by_month": ex_std,
+            "excess_win_rate": ex_win, "t_by_month": t_by, "p_by_month": p_by,
+            "significant_by_month": sig_by,
         }
 
-    def _aggregate_quarterly(self, monthly_df: pd.DataFrame) -> dict:
-        """Aggregate into Q1/Q2/Q3/Q4 average returns."""
-        quarter_map = {1: 1, 2: 1, 3: 1, 4: 2, 5: 2, 6: 2,
-                       7: 3, 8: 3, 9: 3, 10: 4, 11: 4, 12: 4}
-        monthly_df  = monthly_df.copy()
-        monthly_df["quarter"] = monthly_df["month"].map(quarter_map)
-
-        result = {}
+    @staticmethod
+    def _aggregate_quarterly(sector_monthly, bench_monthly) -> dict:
+        merged = sector_monthly.merge(bench_monthly, on=["year", "month"], how="inner")
+        merged["excess"] = merged["ret"] - merged["bench"]
+        qmap = {1:1,2:1,3:1,4:2,5:2,6:2,7:3,8:3,9:3,10:4,11:4,12:4}
+        merged["q"] = merged["month"].map(qmap)
+        out = {}
         for q in range(1, 5):
-            subset = monthly_df[monthly_df["quarter"] == q]["return_pct"]
-            result[q] = {
-                "avg":           round(float(subset.mean()), 2) if len(subset) > 0 else 0.0,
-                "std":           round(float(subset.std()),  2) if len(subset) > 0 else 0.0,
-                "positive_rate": round(float((subset > 0).mean() * 100), 1) if len(subset) > 0 else 50.0
+            sub = merged[merged["q"] == q]
+            out[q] = {
+                "avg": round(float(sub["ret"].mean()), 2) if len(sub) else 0.0,
+                "std": round(float(sub["ret"].std()), 2) if len(sub) else 0.0,
+                "positive_rate": round(float((sub["ret"] > 0).mean() * 100), 1) if len(sub) else 50.0,
+                "excess": round(float(sub["excess"].mean()), 2) if len(sub) else 0.0,
             }
-        return result
-
-    # ── Best period detection ──────────────────────────────────────────────
+        return out
 
     def _find_best_periods(self, agg: dict) -> dict:
-        avg = agg["avg_by_month"]
-        pos = agg["positive_rate"]
+        # Rank months by the excess t-statistic (signal-to-noise of outperformance)
+        edge = {m: agg["t_by_month"].get(m, 0.0) for m in range(1, 13)}
+        ordered = sorted(range(1, 13), key=lambda m: edge[m], reverse=True)
+        best, worst = ordered[:3], ordered[-3:]
 
-        # Composite score: 70% avg return + 30% positive rate normalised
-        scores = {}
-        for m in range(1, 13):
-            scores[m] = avg[m] * 0.7 + (pos[m] - 50) * 0.06
-
-        sorted_months = sorted(scores.keys(), key=lambda m: scores[m], reverse=True)
-
-        best_months  = sorted_months[:3]
-        worst_months = sorted_months[-3:]
-
-        # Best consecutive 3-month window
-        best_window_score = -999
-        best_window_start = 1
+        best_ws, best_start = -1e9, 1
         for start in range(1, 13):
-            window = [(start - 1 + i) % 12 + 1 for i in range(3)]
-            ws = sum(scores[m] for m in window)
-            if ws > best_window_score:
-                best_window_score = ws
-                best_window_start = start
-
-        best_window = [(best_window_start - 1 + i) % 12 + 1 for i in range(3)]
+            win = [(start - 1 + i) % 12 + 1 for i in range(3)]
+            ws = sum(edge[m] for m in win)
+            if ws > best_ws:
+                best_ws, best_start = ws, start
+        best_window = [(best_start - 1 + i) % 12 + 1 for i in range(3)]
 
         return {
-            "best_months":       [MONTHS[m - 1] for m in best_months],
-            "worst_months":      [MONTHS[m - 1] for m in worst_months],
-            "best_window":       [MONTHS[m - 1] for m in best_window],
-            "best_window_score": round(best_window_score, 2),
-            "scores":            {MONTHS[m - 1]: round(scores[m], 3) for m in range(1, 13)}
+            "best_months": [MONTHS[m - 1] for m in best],
+            "worst_months": [MONTHS[m - 1] for m in worst],
+            "best_window": [MONTHS[m - 1] for m in best_window],
+            "edge_by_month": {MONTHS[m - 1]: round(edge[m], 2) for m in range(1, 13)},
         }
 
-    # ── Current month recommendation ───────────────────────────────────────
-
+    # ── Current-month ranking (excess + significance) ──────────────────────
     def _current_month_rank(self, sector_stats: dict) -> list:
-        """Rank sectors by their historical performance in the current month."""
-        current_month = datetime.now().month
-        rankings = []
-        for sector_key, stats in sector_stats.items():
-            if "error" in stats:
+        cm = datetime.now().month
+        rows = []
+        for key, s in sector_stats.items():
+            if "error" in s:
                 continue
-            avg  = stats["monthly"]["avg_by_month"].get(current_month, 0)
-            pos  = stats["monthly"]["positive_rate"].get(current_month, 50)
-            std  = stats["monthly"]["std_by_month"].get(current_month, 5)
-            # Composite: return vs risk
-            score = avg * 0.6 + (pos - 50) * 0.06 - std * 0.05
-            rankings.append({
-                "sector":   sector_key,
-                "name":     SECTOR_CONFIG[sector_key]["name"],
-                "icon":     SECTOR_CONFIG[sector_key]["icon"],
-                "avg_return": avg,
-                "positive_rate": pos,
-                "std":       std,
-                "score":     round(score, 3)
+            mo = s["monthly"]
+            ex = mo["excess_by_month"].get(cm, 0.0)
+            t = mo["t_by_month"].get(cm, 0.0)
+            p = mo["p_by_month"].get(cm, 1.0)
+            rows.append({
+                "sector": key, "name": SECTOR_CONFIG[key]["name"], "icon": SECTOR_CONFIG[key]["icon"],
+                "avg_return": mo["avg_by_month"].get(cm, 0.0),
+                "excess_return": ex,
+                "excess_win_rate": mo["excess_win_rate"].get(cm, 50.0),
+                "positive_rate": mo["positive_rate"].get(cm, 50.0),
+                "std": mo["std_by_month"].get(cm, 0.0),
+                "t_stat": t, "p_value": p, "significant": bool(p < 0.10),
+                "sig_stars": _sig_stars(p),
+                "edge_score": round(float(t), 3),   # signal-to-noise seasonal edge
             })
+        rows.sort(key=lambda x: x["edge_score"], reverse=True)
+        return rows
 
-        rankings.sort(key=lambda x: x["score"], reverse=True)
-        return rankings
+    def _driver_for(self, sector_key, month):
+        return SECTOR_MONTH_DRIVERS.get((sector_key, month)) or MONTH_DRIVERS.get(month, "")
 
-    # ── Top 3 picks ────────────────────────────────────────────────────────
+    def _confidence(self, p, n, win):
+        if p < 0.05 and n >= 8:
+            return "High"
+        if p < 0.10 and n >= 6:
+            return "Medium"
+        return "Low"
 
-    def _generate_top_picks(self, sector_stats: dict, current_rankings: list) -> list:
-        """
-        Generate top 3 sector picks combining:
-        - Current month historical strength
-        - Trend momentum (last 3 months vs long-term avg)
-        - Consistency (positive rate)
-        """
-        current_month = datetime.now().month
+    def _generate_top_picks(self, sector_stats, rankings) -> list:
+        cm = datetime.now().month
         picks = []
+        # Only sectors that beat the market this month (positive excess), ranked by edge
+        candidates = [r for r in rankings if r["excess_return"] > 0]
+        for r in candidates:
+            key = r["sector"]
+            n = sector_stats[key]["monthly"]["sample_count"].get(cm, 0)
+            conf = self._confidence(r["p_value"], n, r["excess_win_rate"])
+            driver = self._driver_for(key, cm)
 
-        for rank_item in current_rankings[:5]:
-            sector_key = rank_item["sector"]
-            stats      = sector_stats[sector_key]
-
-            # Recent momentum: avg of last 3 months vs overall avg
-            prev_months = [(current_month - i - 1) % 12 + 1 for i in range(3)]
-            recent_avg  = np.mean([stats["monthly"]["avg_by_month"].get(m, 0) for m in prev_months])
-            overall_avg = np.mean(list(stats["monthly"]["avg_by_month"].values()))
-            momentum    = recent_avg - overall_avg
-
-            best_months = stats["best_periods"]["best_months"]
-            is_best_now = MONTHS[current_month - 1] in best_months
-
-            # Confidence: based on sample size and consistency
-            sample = stats["monthly"]["sample_count"].get(current_month, 0)
-            pos_rate = rank_item["positive_rate"]
-            confidence = "High" if (sample >= 7 and pos_rate >= 65) else \
-                         "Medium" if (sample >= 5 and pos_rate >= 55) else "Low"
-
-            reason_parts = []
-            if is_best_now:
-                reason_parts.append(f"{MONTHS[current_month - 1]} is historically one of the best months")
-            if momentum > 0.5:
-                reason_parts.append("recent months showing positive momentum")
-            if pos_rate >= 65:
-                reason_parts.append(f"positive in {pos_rate}% of years for this month")
-            if rank_item["avg_return"] > 1.5:
-                reason_parts.append(f"avg monthly return of +{rank_item['avg_return']}%")
-
-            reason = "; ".join(reason_parts) if reason_parts else "Historical seasonal strength"
+            reason = []
+            if r["significant"]:
+                reason.append(f"statistically significant outperformance {r['sig_stars']} (p={r['p_value']})")
+            reason.append(f"beats Nifty by {r['excess_return']:+.2f}%/mo in {MONTHS[cm-1]} on average")
+            reason.append(f"outperformed the market in {r['excess_win_rate']:.0f}% of the last {n} years")
+            reason_str = "; ".join(reason)
 
             picks.append({
-                "rank":          len(picks) + 1,
-                "sector":        sector_key,
-                "name":          SECTOR_CONFIG[sector_key]["name"],
-                "icon":          SECTOR_CONFIG[sector_key]["icon"],
-                "color":         SECTOR_CONFIG[sector_key]["color"],
-                "avg_return":    rank_item["avg_return"],
-                "positive_rate": pos_rate,
-                "confidence":    confidence,
-                "momentum":      round(float(momentum), 2),
-                "best_months":   best_months,
-                "reason":        reason,
-                "components":    SECTOR_CONFIG[sector_key]["components"][:4]
+                "rank": len(picks) + 1, "sector": key,
+                "name": SECTOR_CONFIG[key]["name"], "icon": SECTOR_CONFIG[key]["icon"],
+                "color": SECTOR_CONFIG[key]["color"],
+                "avg_return": r["avg_return"],
+                "excess_return": r["excess_return"],
+                "excess_win_rate": r["excess_win_rate"],
+                "positive_rate": r["positive_rate"],
+                "t_stat": r["t_stat"], "p_value": r["p_value"],
+                "significant": r["significant"], "sig_stars": r["sig_stars"],
+                "confidence": conf,
+                "best_months": sector_stats[key]["best_periods"]["best_months"],
+                "driver": driver,
+                "reason": reason_str,
+                "components": SECTOR_CONFIG[key]["components"][:4],
             })
-
             if len(picks) == 3:
                 break
-
         return picks
 
-    # ── Heatmap data ───────────────────────────────────────────────────────
-
-    def _build_heatmap(self, sector_stats: dict) -> dict:
-        """
-        Build sector × month matrix of avg returns for heatmap rendering.
-        Returns: { sectors: [...], months: [...], matrix: [[...]] }
-        """
+    # ── Heatmaps ───────────────────────────────────────────────────────────
+    def _build_heatmap(self, sector_stats, field="avg_by_month") -> dict:
         sectors = [k for k in sector_stats if "error" not in sector_stats[k]]
-        matrix  = []
-        for sector_key in sectors:
-            row = []
-            for m in range(1, 13):
-                val = sector_stats[sector_key]["monthly"]["avg_by_month"].get(m, 0)
-                row.append(round(val, 2))
-            matrix.append(row)
-
+        matrix = [[round(sector_stats[k]["monthly"][field].get(m, 0), 2) for m in range(1, 13)]
+                  for k in sectors]
         return {
             "sectors": sectors,
             "sector_names": [SECTOR_CONFIG[s]["name"] for s in sectors],
-            "sector_icons": [SECTOR_CONFIG[s]["icon"]  for s in sectors],
-            "months":  MONTHS,
-            "matrix":  matrix
+            "sector_icons": [SECTOR_CONFIG[s]["icon"] for s in sectors],
+            "months": MONTHS, "matrix": matrix,
         }
 
     # ── Main entry point ───────────────────────────────────────────────────
-
     def analyze(self) -> dict:
-        """
-        Run full seasonal analysis across all sectors.
-        Returns complete data structure for frontend consumption.
-        """
-        print("🌿 Starting Indian seasonal analysis...")
+        print("Starting Indian seasonal analysis (market-relative + significance)...")
+        bench = self._benchmark_monthly()
         sector_stats = {}
 
-        for sector_key in SECTOR_CONFIG:
-            print(f"  Fetching {sector_key}...")
+        for key in SECTOR_CONFIG:
             try:
-                df = self._fetch_sector_data(sector_key)
+                df = self._fetch_sector_data(key)
                 if df is None:
-                    sector_stats[sector_key] = {"error": "No data available"}
+                    sector_stats[key] = {"error": "No data available"}
                     continue
+                sm = self._monthly_returns(df)
+                agg = self._aggregate(sm, bench)
+                quarterly = self._aggregate_quarterly(sm, bench)
+                best = self._find_best_periods(agg)
 
-                monthly_df  = self._compute_monthly_returns(df)
-                monthly_agg = self._aggregate_monthly(monthly_df)
-                quarterly   = self._aggregate_quarterly(monthly_df)
-                best_periods = self._find_best_periods(monthly_agg)
+                merged = sm.merge(bench, on=["year", "month"], how="inner")
+                merged["excess"] = merged["ret"] - merged["bench"]
+                yearly = merged.groupby("year")["ret"].sum().reset_index()
 
-                # Year-over-year for sparkline
-                yearly_returns = monthly_df.groupby("year")["return_pct"].sum().reset_index()
-                yearly_returns = yearly_returns.rename(columns={"return_pct": "annual_return"})
-
-                sector_stats[sector_key] = {
-                    "name":          SECTOR_CONFIG[sector_key]["name"],
-                    "icon":          SECTOR_CONFIG[sector_key]["icon"],
-                    "color":         SECTOR_CONFIG[sector_key]["color"],
-                    "monthly":       monthly_agg,
-                    "quarterly":     quarterly,
-                    "best_periods":  best_periods,
-                    "yearly": [
-                        {"year": int(r["year"]), "return": round(float(r["annual_return"]), 2)}
-                        for _, r in yearly_returns.iterrows()
-                    ],
-                    "overall_avg":   round(float(monthly_df["return_pct"].mean()), 2),
-                    "overall_std":   round(float(monthly_df["return_pct"].std()),  2),
+                sector_stats[key] = {
+                    "name": SECTOR_CONFIG[key]["name"], "icon": SECTOR_CONFIG[key]["icon"],
+                    "color": SECTOR_CONFIG[key]["color"],
+                    "monthly": agg, "quarterly": quarterly, "best_periods": best,
+                    "yearly": [{"year": int(r["year"]), "return": round(float(r["ret"]), 2)}
+                               for _, r in yearly.iterrows()],
+                    "overall_avg": round(float(sm["ret"].mean()), 2),
+                    "overall_std": round(float(sm["ret"].std()), 2),
+                    "overall_excess": round(float(merged["excess"].mean()), 2),
                 }
-
             except Exception as e:
-                print(f"  ❌ {sector_key} failed: {traceback.format_exc()}")
-                sector_stats[sector_key] = {"error": str(e)}
+                print(f"  {key} failed: {traceback.format_exc()}")
+                sector_stats[key] = {"error": str(e)}
 
-        current_rankings = self._current_month_rank(sector_stats)
-        top_picks        = self._generate_top_picks(sector_stats, current_rankings)
-        heatmap          = self._build_heatmap(sector_stats)
+        rankings = self._current_month_rank(sector_stats)
+        top_picks = self._generate_top_picks(sector_stats, rankings)
+        cm = datetime.now().month
 
-        # Cross-sector comparison summary
         comparison = []
-        for sector_key, stats in sector_stats.items():
-            if "error" in stats:
+        for key, s in sector_stats.items():
+            if "error" in s:
                 continue
             comparison.append({
-                "sector":      sector_key,
-                "name":        stats["name"],
-                "icon":        stats["icon"],
-                "color":       stats["color"],
-                "overall_avg": stats["overall_avg"],
-                "overall_std": stats["overall_std"],
-                "best_month":  stats["best_periods"]["best_months"][0] if stats["best_periods"]["best_months"] else "N/A",
-                "worst_month": stats["best_periods"]["worst_months"][0] if stats["best_periods"]["worst_months"] else "N/A",
-                "best_window": " → ".join(stats["best_periods"]["best_window"]),
+                "sector": key, "name": s["name"], "icon": s["icon"], "color": s["color"],
+                "overall_avg": s["overall_avg"], "overall_std": s["overall_std"],
+                "overall_excess": s["overall_excess"],
+                "best_month": s["best_periods"]["best_months"][0] if s["best_periods"]["best_months"] else "N/A",
+                "worst_month": s["best_periods"]["worst_months"][0] if s["best_periods"]["worst_months"] else "N/A",
+                "best_window": " → ".join(s["best_periods"]["best_window"]),
             })
-        comparison.sort(key=lambda x: x["overall_avg"], reverse=True)
+        comparison.sort(key=lambda x: x["overall_excess"], reverse=True)
+
+        # ── Novel highlight: the seasonal patterns that are STATISTICALLY REAL ──
+        # Across every sector × month, surface only the excess-return edges that
+        # clear the significance bar — honest signal, not noise.
+        sig_edges = []
+        for key, s in sector_stats.items():
+            if "error" in s:
+                continue
+            mo = s["monthly"]
+            for m in range(1, 13):
+                if mo["significant_by_month"].get(m):
+                    ex = mo["excess_by_month"][m]
+                    sig_edges.append({
+                        "sector": key, "name": s["name"], "icon": s["icon"],
+                        "month": MONTHS[m - 1], "month_num": m,
+                        "excess": ex, "t_stat": mo["t_by_month"][m],
+                        "p_value": mo["p_by_month"][m], "stars": _sig_stars(mo["p_by_month"][m]),
+                        "direction": "outperform" if ex > 0 else "underperform",
+                        "win_rate": mo["excess_win_rate"][m],
+                        "driver": self._driver_for(key, m),
+                    })
+        sig_edges.sort(key=lambda x: abs(x["t_stat"]), reverse=True)
 
         return {
-            "success":          True,
-            "generated_at":     datetime.now().isoformat(),
-            "current_month":    MONTHS[datetime.now().month - 1],
-            "current_quarter":  f"Q{(datetime.now().month - 1) // 3 + 1}",
-            "years_analyzed":   self.years,
-            "sector_stats":     sector_stats,
-            "current_rankings": current_rankings,
-            "top_picks":        top_picks,
-            "heatmap":          heatmap,
-            "comparison":       comparison,
+            "success": True,
+            "generated_at": datetime.now().isoformat(),
+            "current_month": MONTHS[cm - 1],
+            "current_quarter": f"Q{(cm - 1) // 3 + 1}",
+            "current_driver": MONTH_DRIVERS.get(cm, ""),
+            "years_analyzed": self.years,
+            "benchmark": "Nifty 50",
+            "methodology": "Market-relative excess returns vs Nifty 50, t-tested for significance.",
+            "sector_stats": sector_stats,
+            "current_rankings": rankings,
+            "top_picks": top_picks,
+            "heatmap": self._build_heatmap(sector_stats, "avg_by_month"),
+            "excess_heatmap": self._build_heatmap(sector_stats, "excess_by_month"),
+            "significant_edges": sig_edges,
+            "comparison": comparison,
         }
