@@ -9,7 +9,7 @@
  *   // trigger:
  *   execute('AAPL');
  */
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 /**
  * @template T
@@ -24,12 +24,18 @@ const useApi = (serviceFunction, { initialData = null, immediate = false } = {})
   const [loading, setLoading] = useState(immediate);
   const [error,   setError]   = useState(null);
 
-  // Prevent state updates on unmounted components
+  // Prevent state updates on unmounted components. Must be driven by the mount
+  // lifecycle: in React 18 StrictMode the initial mount is unmount+remount, and
+  // without this effect the ref could get stuck `false`, silently dropping a
+  // successful response (200 received but nothing renders).
   const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const execute = useCallback(
     async (...args) => {
-      mountedRef.current = true;
       setLoading(true);
       setError(null);
 

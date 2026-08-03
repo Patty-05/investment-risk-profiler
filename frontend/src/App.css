@@ -221,25 +221,38 @@ small { display: block; font-size: 0.76rem; color: var(--text-muted); margin-top
 .score-display {
   padding: 30px; border-radius: var(--radius-lg); text-align: center;
   border: 1px solid var(--border); background: var(--surface-2);
+  position: relative; overflow: hidden;
+}
+/* Neutral card (no bright wash) + a colored top accent bar for the signal, so
+   the big number reads clearly in both light and dark themes. */
+.score-display::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: var(--border-2);
 }
 .score-value {
-  font-family: var(--mono); font-size: clamp(2.6rem, 7vw, 3.6rem); font-weight: 600;
+  font-family: var(--mono); font-size: clamp(2.6rem, 7vw, 3.6rem); font-weight: 700;
   line-height: 1; letter-spacing: -0.03em; margin: 6px 0; color: var(--text-primary);
 }
 .score-max { font-size: 1.2rem; color: var(--text-muted); font-weight: 500; }
 .risk-level { font-size: 0.82rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 8px; color: var(--text-secondary); }
-.score-excellent .score-display { border-color: rgba(34,197,94,0.35);  background: var(--green-dim); }
+
+.score-excellent .score-display, .score-good .score-display { border-color: rgba(34,197,94,0.45); }
+.score-excellent .score-display::before, .score-good .score-display::before { background: var(--green); }
 .score-excellent .score-value, .score-good .score-value { color: var(--green); }
-.score-good      .score-display { border-color: rgba(34,197,94,0.28);  background: var(--green-dim); }
-.score-fair      .score-display { border-color: rgba(245,158,11,0.3);  background: var(--amber-dim); }
-.score-fair      .score-value   { color: var(--amber); }
-.score-poor      .score-display { border-color: rgba(239,68,68,0.3);   background: var(--red-dim); }
-.score-poor      .score-value, .score-very-poor .score-value { color: var(--red); }
-.score-very-poor .score-display { border-color: rgba(239,68,68,0.4);   background: var(--red-dim); }
+
+.score-fair .score-display { border-color: rgba(245,158,11,0.45); }
+.score-fair .score-display::before { background: var(--amber); }
+.score-fair .score-value { color: var(--amber); }
+
+.score-poor .score-display, .score-very-poor .score-display { border-color: rgba(239,68,68,0.45); }
+.score-poor .score-display::before, .score-very-poor .score-display::before { background: var(--red); }
+.score-poor .score-value, .score-very-poor .score-value { color: var(--red); }
 
 /* ── Chart ──────────────────────────────────────────────────────────────────── */
 .chart-wrap { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface-2); }
 .chart-wrap iframe { display: block; }
+.chart-fallback { display: block; padding: 8px 12px; font-size: 0.74rem; color: var(--text-muted); text-align: center; border-top: 1px solid var(--border); text-decoration: none; }
+.chart-fallback:hover { color: var(--accent); }
 
 /* ── Analysis grid & cards ──────────────────────────────────────────────────── */
 .analysis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
@@ -489,6 +502,21 @@ table tbody tr:last-child td { border-bottom: none; }
 
 /* Diversification label */
 .diversification-label { color: var(--text-muted); font-weight: 400; }
+
+/* ── Sector peers / alternatives ─────────────────────────────────────────────── */
+.peers-card { margin: 22px 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px 22px; }
+.peers-standing { font-size: 0.84rem; color: var(--text-secondary); line-height: 1.6; margin: 0 0 10px; }
+.peers-standing strong { color: var(--text-primary); }
+.peers-hint { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 12px; }
+.peers-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.peer-chip { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
+.peer-chip:hover { border-color: var(--accent); transform: translateY(-1px); }
+.peer-tk { font-family: var(--mono); font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
+.peer-ret { font-family: var(--mono); font-size: 0.76rem; }
+.peer-ret.up { color: var(--green); }
+.peer-ret.down { color: var(--red); }
+.peer-go { font-size: 0.72rem; color: var(--accent); margin-top: 2px; }
 
 @media (max-width: 640px) {
   .merits-grid { grid-template-columns: 1fr; }

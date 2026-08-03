@@ -85,6 +85,15 @@ function toneOfScore(s) {
 }
 const titleize = (s) => String(s || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
+// TradingView needs an exchange-prefixed symbol (NSE:INFY), not the yfinance
+// "INFY.NS" form — that mismatch is why the chart rendered blank.
+const tvSymbol = (t) => {
+  const s = String(t || '').toUpperCase().trim();
+  if (s.endsWith('.NS')) return 'NSE:' + s.slice(0, -3);
+  if (s.endsWith('.BO')) return 'BSE:' + s.slice(0, -3);
+  return s;
+};
+
 
 // ── Stock Analysis (unified page) ──────────────────────────────────────────
 function StockAnalysis({ handoff }) {
@@ -174,14 +183,15 @@ function StockAnalysis({ handoff }) {
 
       {!loading && result?.success && (
         <StockResult result={result} getScoreClass={getScoreClass}
-          profile={{ riskAppetite, horizon }} />
+          profile={{ riskAppetite, horizon }}
+          onAnalysePeer={(t) => runAnalysis(t, { riskAppetite, horizon })} />
       )}
     </div>
   );
 }
 
 
-function StockResult({ result, getScoreClass, profile }) {
+function StockResult({ result, getScoreClass, profile, onAnalysePeer }) {
   const t  = result.technical_analysis || {};
   const f  = result.fundamental_analysis || {};
   const se = result.sentiment_analysis || {};
@@ -248,9 +258,11 @@ function StockResult({ result, getScoreClass, profile }) {
       {/* Price chart */}
       <div className="chart-wrap">
         <iframe
-          src={`https://s.tradingview.com/widgetembed/?symbol=${result.ticker}&interval=D&theme=dark`}
+          src={`https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(tvSymbol(result.ticker))}&interval=D&theme=dark&hidevolume=0&hidelegend=0&studies=[]`}
           width="100%" height="380" frameBorder="0" title="Price chart"
         />
+        <a className="chart-fallback" href={`https://in.tradingview.com/chart/?symbol=${encodeURIComponent(tvSymbol(result.ticker))}`}
+           target="_blank" rel="noopener noreferrer">Chart not loading? Open {tvSymbol(result.ticker)} on TradingView ↗</a>
       </div>
 
       {/* Analysis grid with explainability */}
@@ -296,6 +308,9 @@ function StockResult({ result, getScoreClass, profile }) {
 
       {/* Merits / demerits — why buy vs why not */}
       {result.merits_analysis && <MeritsCard merits={result.merits_analysis} />}
+
+      {/* Better-performing sector peers as alternatives */}
+      {result.peer_analysis && <PeerAlternatives peers={result.peer_analysis} onAnalysePeer={onAnalysePeer} />}
 
       {/* Portfolio allocation (profile-driven) */}
       {result?.portfolio?.allocation && <PortfolioCard portfolio={result.portfolio} profile={profile} />}
@@ -719,6 +734,42 @@ function MeritsCard({ merits }) {
         </div>
       </div>
       <p className="merits-foot">Framed around what investors typically look for — educational, not financial advice.</p>
+    </div>
+  );
+}
+
+
+// ── Better-performing sector peers ─────────────────────────────────────────
+function PeerAlternatives({ peers, onAnalysePeer }) {
+  const alts = peers?.alternatives || [];
+  const self = peers?.self || {};
+  const showAlts = peers.underperforming && alts.length > 0;
+  const fmt = (v) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v}%`);
+  return (
+    <div className="peers-card">
+      <div className="section-label" style={{ margin: '0 0 10px' }}>Sector Peers · {peers.sector_group}</div>
+      <p className="peers-standing">
+        <strong>{self.ticker}</strong> ranks <strong>#{self.rank}</strong> of {self.n} in {peers.sector_group} by 6-month return
+        {self.return_6m != null && <> ({fmt(self.return_6m)})</>} · cohort median {fmt(peers.cohort_median_return_6m)}.
+      </p>
+      {showAlts ? (
+        <>
+          <p className="peers-hint">Lagging its sector — stronger performers you could compare:</p>
+          <div className="peers-grid">
+            {alts.map((a, i) => (
+              <button key={i} type="button" className="peer-chip"
+                onClick={() => onAnalysePeer && onAnalysePeer(a.ticker)} title={`Analyse ${a.ticker}`}>
+                <span className="peer-tk">{a.ticker}</span>
+                <span className={`peer-ret ${a.return_6m >= 0 ? 'up' : 'down'}`}>{fmt(a.return_6m)} · 6M</span>
+                <span className="peer-go">Analyse →</span>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <p className="peers-hint">At or above its sector median — no stronger same-sector alternative flagged.</p>
+      )}
+      <p className="merits-foot">Past 6-month price performance, sector cohort only — not a recommendation to buy.</p>
     </div>
   );
 }

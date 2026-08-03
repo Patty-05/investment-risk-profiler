@@ -14,6 +14,7 @@ from modules.volumetric_analysis import VolumetricAnalyzer
 from modules.sector_comparison import SectorComparator
 from modules.geopolitical_analysis import GeopoliticalAnalyzer
 from modules.merits_analysis import build_merits
+from modules.peer_analysis import get_peer_alternatives
 from models.feature_engineer import FeatureEngineer
 from models.stock_model import StockRiskModel
 from services.gemini_service import generate_ai_insight
@@ -277,6 +278,24 @@ class StockRiskAnalyzer:
             # 🔹 MERITS / DEMERITS — why-to-buy vs why-not (deterministic)
             # =========================
             results["merits_analysis"] = build_merits(results)
+
+            # =========================
+            # 🔹 PEER ALTERNATIVES — better-performing names in the same sector
+            # =========================
+            try:
+                close = hist_data["Close"].dropna()
+                self_6m = None
+                if len(close) > 25:
+                    window = close.iloc[-126:] if len(close) >= 126 else close
+                    first = float(window.iloc[0])
+                    if first > 0:
+                        self_6m = (float(window.iloc[-1]) / first - 1) * 100
+                yf_sector = (sector_results or {}).get("sector")
+                results["peer_analysis"] = get_peer_alternatives(
+                    self.ticker, yf_sector=yf_sector, self_return_6m=self_6m)
+            except Exception as e:
+                print(f"[peers] failed: {e}")
+                results["peer_analysis"] = None
 
             # =========================
             # 🔹 GEMINI AI — India-aware reasoning layer over the full analysis
