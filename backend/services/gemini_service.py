@@ -62,13 +62,26 @@ def _build_context(d):
         f"sector {_fmt(bd.get('sector'))}, geopolitical {_fmt(bd.get('geopolitical'))}"
     )
 
-    # ML dual model
-    agree = "disagree" if d.get("model_disagreement") else "agree"
-    lines.append(
-        f"ML models (trained on Indian NSE data): Random Forest = {d.get('ml_prediction')} "
-        f"(conf {_fmt(d.get('ml_confidence'), 2)}), XGBoost = {d.get('xgb_prediction')} "
-        f"(conf {_fmt(d.get('xgb_confidence'), 2)}); the two models {agree}."
-    )
+    # ML tri-model consensus (all trained on Indian NSE data)
+    cons = d.get("consensus") or {}
+    if cons.get("models"):
+        parts = []
+        for m in cons["models"]:
+            if m.get("signal") is not None:
+                parts.append(f"{m.get('name')} = {m.get('signal')} (conf {_fmt(m.get('confidence'), 2)})")
+        agree_txt = ("all three agree" if cons.get("agree")
+                     else f"{cons.get('agreement')} agree; majority {cons.get('majority')}")
+        lines.append(
+            "Three ML models (trained on Indian NSE data): "
+            + "; ".join(parts)
+            + f". Consensus: {agree_txt}. The third model is rule-aware (blends the "
+              "technical rule engine into its features)."
+        )
+    else:
+        lines.append(
+            f"ML models (Indian NSE data): Random Forest = {d.get('ml_prediction')} "
+            f"(conf {_fmt(d.get('ml_confidence'), 2)})."
+        )
 
     # Technical / fundamental
     lines.append(f"Technical signal: {tech.get('signal')} (RSI status {tech.get('details', {}).get('rsi_status', 'N/A')}, "
@@ -120,20 +133,21 @@ def _build_context(d):
 
 def _build_prompt(d):
     context = _build_context(d)
-    return f"""You are an equity research analyst who specialises in the INDIAN stock market (NSE/BSE). You write concise, balanced, educational insights for retail investors in India. All figures are in Indian Rupees (INR) and the Indian market context.
+    return f"""You are a sell-side equity research analyst in Mumbai who covers the INDIAN market (NSE/BSE) for domestic retail investors. You think in Indian Rupees (INR) and in the Indian macro frame: the RBI rate/repo cycle and liquidity, FII vs DII flows, the rupee (USD/INR), the monsoon and rural demand, the Union Budget and GST, festive/wedding-season demand, and where the Nifty 50 / Sensex and the relevant sector index (Nifty Bank, Nifty IT, Nifty Auto, Nifty Pharma, Nifty FMCG, Nifty Metal, etc.) sit. You know Indian retail investors mostly hold via SIPs and think in multi-year horizons.
 
-Below is a completed multi-factor analysis for one Indian stock. Reason ONLY from this data — do not invent prices, news, or numbers that are not given.
+Below is a completed multi-factor analysis for one Indian stock. Reason ONLY from this data — do not invent prices, news, or numbers that are not given. Where you add Indian macro colour, keep it to well-known standing context (e.g. "IT earnings track the rupee and US demand", "OMCs are hurt by a crude spike"), never fabricated events.
 
 ANALYSIS DATA
 {context}
 
-Write a tight 4–5 sentence insight in clear, confident plain English (Indian market voice, INR). Structure it as:
-1. BOTTOM LINE (first sentence): the overall stance in a few words, the single biggest reason for it, and whether the two ML models agree.
-2. The key supporting and opposing factors — name the 2–3 that matter most (e.g. sector momentum vs weak fundamentals, or a sentiment-vs-sector divergence). Be specific, not generic.
-3. The GEOPOLITICAL read, India-specific: name the actual conflict channels and whether they help or hurt this stock (only when there is exposure).
-4. How it fits THIS investor's risk appetite and horizon, and the suggested equity weight.
+Write a tight 5–6 sentence insight in clear, confident plain English with an Indian-market voice (INR, NSE framing). Structure it as:
+1. BOTTOM LINE (first sentence): the overall stance in a few words, the single biggest reason, and what the THREE ML models say together (agree / split, and the majority).
+2. The key supporting and opposing factors — name the 2–3 that matter most (e.g. sector-relative strength vs weak fundamentals, or a stock-vs-sector sentiment divergence). Be specific.
+3. One line of INDIAN macro context that actually bears on this stock (rate cycle, rupee, crude, monsoon, flows, or Budget/GST) — only if genuinely relevant to its sector.
+4. The GEOPOLITICAL read, India-specific: name the actual conflict channels and whether they help or hurt this stock (only when there is exposure).
+5. Who this suits and how their profile should be shaped to hold it (risk appetite, horizon, SIP vs lump sum) — reflect the suggested equity weight, framed as general guidance.
 
-Stay balanced (one clear positive, one clear risk). Do NOT tell the reader to buy or sell. Avoid hedging filler ("it is important to note", "investors should carefully consider"). Close with one short sentence: educational analysis, not financial advice. Plain prose only — no markdown, asterisks, bullets, or bold."""
+Stay balanced (one clear positive, one clear risk). Do NOT tell the reader to buy or sell or give a personalised allocation instruction. Avoid hedging filler ("it is important to note", "investors should carefully consider"). Close with one short sentence: educational analysis, not financial advice. Plain prose only — no markdown, asterisks, bullets, or bold."""
 
 
 def generate_ai_insight(data):

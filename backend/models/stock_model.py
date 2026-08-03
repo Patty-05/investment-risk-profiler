@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
 from sklearn.preprocessing import RobustScaler
 from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.inspection import permutation_importance
 import os
 import pickle
 from models.data_builder import DataBuilder
@@ -12,12 +13,17 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.utils.class_weight import compute_sample_weight
 from collections import Counter
 
+# The hybrid model is trained on the standard feature set PLUS one extra column:
+# the rule engine's net technical score. So its vote reflects how the learned
+# patterns line up with the rule system — "a mix of model + rule".
+HYBRID_FEATURE_NAMES = list(FEATURE_NAMES) + ["rule_signal"]
+
 try:
     from xgboost import XGBClassifier
     XGB_AVAILABLE = True
 except ImportError:
     XGB_AVAILABLE = False
-    print("⚠️ xgboost not installed — XGB features disabled. Run: pip install xgboost")
+    print("[warn] xgboost not installed — XGB features disabled. Run: pip install xgboost")
 
 
 # ── Training universe: Indian equities only (NSE, .NS) ──────────────────────
@@ -112,6 +118,10 @@ class StockRiskModel:
         self.trained     = False
         self.xgb_model   = None
         self.xgb_trained = False
+        # Third model: rule-aware HistGradientBoosting hybrid
+        self.hgb_model      = None
+        self.hgb_trained    = False
+        self.hgb_importances = []   # permutation importance, computed at train
         self.metrics     = {}
 
     # ── Rule-based override — fixes HOLD bias ──────────────────────────────
@@ -147,6 +157,59 @@ class StockRiskModel:
         if score <= -2: return "SELL"
         if score >= 2:  return "BUY"
         return None
+
+    # ── Numeric rule score (price-derived only) for the hybrid model ───────
+    # Same technical logic as _rule_based_signal but WITHOUT sentiment (which
+    # can't be reconstructed historically), returned as a signed net score so
+    # it can be fed to the hybrid model as an extra feature. Computed from real
+    # (unscaled) feature values at both train and inference → consistent.
+    @staticmethod
+    def _rule_score_column(X: np.ndarray) -> np.ndarray:
+        """Vectorised net rule score over a raw feature matrix (N × len(FEATURE_NAMES))."""
+        idx = {n: i for i, n in enumerate(FEATURE_NAMES)}
+        rsi    = X[:, idx["rsi"]]
+        returns = X[:, idx["returns"]]
+        vol    = X[:, idx["volatility"]]
+        trend  = X[:, idx["market_trend"]]
+        boll   = X[:, idx["bollinger_position"]]
+        sharpe = X[:, idx["sharpe_ratio"]]
+
+        score = np.zeros(X.shape[0], dtype=np.float32)
+        score -= (rsi > _STRONG_SELL_RSI)
+        score -= (returns < _NEGATIVE_RETURNS)
+        score -= (sharpe < _STRONG_SELL_SHARPE)
+        score -= (trend == _BEARISH_TREND)
+        score -= (boll > _HIGH_BOLLINGER)
+        score -= ((vol > 0.6) & (returns < 0))
+        score += (rsi < _STRONG_BUY_RSI)
+        score += (returns > _POSITIVE_RETURNS)
+        score += (sharpe > _STRONG_BUY_SHARPE)
+        score += (trend == _BULLISH_TREND)
+        score += (boll < _LOW_BOLLINGER)
+        return score
+
+    @staticmethod
+    def _rule_score_row(feature_dict: dict) -> float:
+        """Scalar net rule score for one inference bar (price-derived only)."""
+        rsi    = feature_dict.get("rsi", 50)
+        returns = feature_dict.get("returns", 0)
+        vol    = feature_dict.get("volatility", 0.3)
+        trend  = feature_dict.get("market_trend", 0)
+        boll   = feature_dict.get("bollinger_position", 0.0)
+        sharpe = feature_dict.get("sharpe_ratio", 0)
+        s = 0.0
+        if rsi > _STRONG_SELL_RSI:        s -= 1
+        if returns < _NEGATIVE_RETURNS:   s -= 1
+        if sharpe < _STRONG_SELL_SHARPE:  s -= 1
+        if trend == _BEARISH_TREND:       s -= 1
+        if boll > _HIGH_BOLLINGER:        s -= 1
+        if vol > 0.6 and returns < 0:     s -= 1
+        if rsi < _STRONG_BUY_RSI:         s += 1
+        if returns > _POSITIVE_RETURNS:   s += 1
+        if sharpe > _STRONG_BUY_SHARPE:   s += 1
+        if trend == _BULLISH_TREND:       s += 1
+        if boll < _LOW_BOLLINGER:         s += 1
+        return float(s)
 
     # ── Feature importance from CalibratedClassifierCV ─────────────────────
     def _extract_rf_importances(self):
@@ -263,12 +326,66 @@ class StockRiskModel:
                         xgb_scores = cross_val_score(xgb_cv, X_scaled, y, cv=skf, scoring='accuracy')
                         print(f"  XGB CV accuracy: {xgb_scores.mean():.3f} ± {xgb_scores.std():.3f}")
                     except Exception as e:
-                        print(f"  ⚠️ XGB CV skipped: {e}")
+                        print(f"  [warn] XGB CV skipped: {e}")
             except Exception as e:
-                print(f"⚠️ XGBoost training failed: {e}")
+                print(f"[warn] XGBoost training failed: {e}")
                 self.xgb_trained = False
         else:
-            print("⚠️ XGBoost not available — skipping")
+            print("[warn] XGBoost not available — skipping")
+
+        # ── Hybrid rule-aware HistGradientBoosting ─────────────────────────
+        # Trained on the scaled feature set PLUS the rule engine's net score,
+        # so it blends learned patterns with the rule system. HGB natively
+        # handles class weighting via sample_weight and is fast on Windows.
+        try:
+            rule_col = self._rule_score_column(X).reshape(-1, 1)
+            X_hybrid = np.hstack([X_scaled, rule_col])
+            hgb_sample_weight = compute_sample_weight('balanced', y)
+            self.hgb_model = HistGradientBoostingClassifier(
+                max_iter=400, learning_rate=0.05, max_depth=6,
+                l2_regularization=1.0, max_leaf_nodes=31,
+                early_stopping=True, validation_fraction=0.1,
+                random_state=42,
+            )
+            self.hgb_model.fit(X_hybrid, y, sample_weight=hgb_sample_weight)
+            self.hgb_trained = True
+            print("[model] Hybrid HistGradientBoosting trained")
+
+            if skf is not None:
+                try:
+                    hgb_cv = HistGradientBoostingClassifier(
+                        max_iter=400, learning_rate=0.05, max_depth=6,
+                        l2_regularization=1.0, random_state=42,
+                    )
+                    hgb_scores = cross_val_score(hgb_cv, X_hybrid, y, cv=skf, scoring='accuracy')
+                    print(f"  Hybrid CV accuracy: {hgb_scores.mean():.3f} +/- {hgb_scores.std():.3f}")
+                except Exception as e:
+                    print(f"  [warn] Hybrid CV skipped: {e}")
+
+            # HGB has no native feature_importances_ — compute permutation
+            # importance once on a subsample and persist it (global, like the
+            # other models' importances shown in the UI).
+            try:
+                n = min(4000, X_hybrid.shape[0])
+                sel = np.random.RandomState(42).choice(X_hybrid.shape[0], n, replace=False)
+                perm = permutation_importance(
+                    self.hgb_model, X_hybrid[sel], y[sel],
+                    n_repeats=5, random_state=42, scoring='accuracy', n_jobs=-1
+                )
+                imp = np.clip(perm.importances_mean, 0, None)
+                total = imp.sum()
+                imp = (imp / total) if total > 0 else imp
+                self.hgb_importances = [
+                    {"feature": n_, "importance": float(s)}
+                    for n_, s in zip(HYBRID_FEATURE_NAMES, imp)
+                ]
+                print("[model] Hybrid permutation importance computed")
+            except Exception as e:
+                print(f"  [warn] Hybrid importance skipped: {e}")
+                self.hgb_importances = []
+        except Exception as e:
+            print(f"[warn] Hybrid HGB training failed: {e}")
+            self.hgb_trained = False
 
         y_pred = self.model.predict(X_scaled)
         self.metrics = {
@@ -278,7 +395,7 @@ class StockRiskModel:
             "confusion_matrix": confusion_matrix(y, y_pred).tolist()
         }
         self.trained = True
-        print(f"✅ Model trained — train accuracy: {self.metrics['accuracy']}")
+        print(f"[ok] Model trained — train accuracy: {self.metrics['accuracy']}")
 
     # ── Predict ────────────────────────────────────────────────────────────
     def predict(self, features, feature_dict: dict = None):
@@ -315,40 +432,74 @@ class StockRiskModel:
             for i, cls in enumerate(self.model.classes_):
                 prob_dict[labels[cls]] = float(new_probs[i])
 
+        # Raw RF vote (before the rule override) — used for the honest 3-model
+        # consensus; the overridden `final_prediction` stays the headline signal.
+        rf_vote = labels[pred]
+        rf_conf = float(np.max(probs))
+
         result = {
             "prediction":    final_prediction,
             "confidence":    float(np.max(list(prob_dict.values()))) * 0.8 + 0.2,
             "probabilities": prob_dict,
             "rule_override": rule_signal is not None,
+            "rule_signal":   rule_signal,
         }
 
-        # XGBoost
+        # ── XGBoost (raw vote) ─────────────────────────────────────────────
+        xgb_vote, xgb_conf = None, None
         if self.xgb_trained and self.xgb_model is not None:
             try:
                 xgb_pred  = self.xgb_model.predict(features_scaled)[0]
                 xgb_proba = self.xgb_model.predict_proba(features_scaled)[0]
-
-                xgb_prob_dict = {"SELL": 0.0, "HOLD": 0.0, "BUY": 0.0}
-                for i, cls in enumerate(self.xgb_model.classes_):
-                    xgb_prob_dict[labels[int(cls)]] = float(xgb_proba[i])
-
-                xgb_label = rule_signal if rule_signal is not None else labels[int(xgb_pred)]
-
-                result["xgb_prediction"]     = xgb_label
-                result["xgb_confidence"]     = float(np.max(xgb_proba))
-                result["xgb_probabilities"]  = xgb_prob_dict
-                result["model_disagreement"] = (final_prediction != xgb_label)
+                xgb_vote  = labels[int(xgb_pred)]
+                xgb_conf  = float(np.max(xgb_proba))
             except Exception as e:
-                print(f"⚠️ XGBoost inference failed: {e}")
-                result["xgb_prediction"]     = None
-                result["xgb_confidence"]     = None
-                result["xgb_probabilities"]  = None
-                result["model_disagreement"] = False
+                print(f"[warn] XGBoost inference failed: {e}")
+
+        # ── Hybrid rule-aware HGB (raw vote) ───────────────────────────────
+        hgb_vote, hgb_conf = None, None
+        if self.hgb_trained and self.hgb_model is not None:
+            try:
+                rule_val = self._rule_score_row(feature_dict) if feature_dict else 0.0
+                hybrid_input = np.hstack([features_scaled, [[rule_val]]])
+                hgb_pred  = self.hgb_model.predict(hybrid_input)[0]
+                hgb_proba = self.hgb_model.predict_proba(hybrid_input)[0]
+                hgb_vote  = labels[int(hgb_pred)]
+                hgb_conf  = float(np.max(hgb_proba))
+            except Exception as e:
+                print(f"[warn] Hybrid HGB inference failed: {e}")
+
+        # Backward-compatible fields (RF headline + XGB)
+        result["xgb_prediction"]  = xgb_vote
+        result["xgb_confidence"]  = xgb_conf
+        result["hgb_prediction"]  = hgb_vote
+        result["hgb_confidence"]  = hgb_conf
+
+        # ── 3-model consensus ──────────────────────────────────────────────
+        members = [
+            {"name": "Calibrated RF",       "key": "rf",     "signal": rf_vote,  "confidence": rf_conf},
+            {"name": "XGBoost",             "key": "xgb",    "signal": xgb_vote, "confidence": xgb_conf},
+            {"name": "Hybrid (rule-aware)", "key": "hybrid", "signal": hgb_vote, "confidence": hgb_conf},
+        ]
+        votes = [m["signal"] for m in members if m["signal"] is not None]
+        if votes:
+            tally = Counter(votes)
+            majority, top_n = tally.most_common(1)[0]
+            n_models = len(votes)
+            all_agree = len(tally) == 1
+            result["consensus"] = {
+                "models":      members,
+                "agree":       all_agree,
+                "agreement":   f"{top_n}/{n_models}",
+                "majority":    majority,
+                "n_models":    n_models,
+                "rule_signal": rule_signal,
+            }
         else:
-            result["xgb_prediction"]     = None
-            result["xgb_confidence"]     = None
-            result["xgb_probabilities"]  = None
-            result["model_disagreement"] = False
+            result["consensus"] = None
+
+        # Kept for any older consumers: True if the models are not unanimous.
+        result["model_disagreement"] = bool(votes) and len(set(votes)) > 1
 
         return result
 
@@ -369,32 +520,62 @@ class StockRiskModel:
             return [{"feature": n, "importance": float(s)}
                     for n, s in zip(feature_names, self.xgb_model.feature_importances_)]
         except Exception as e:
-            print(f"⚠️ XGBoost feature importance failed: {e}")
+            print(f"[warn] XGBoost feature importance failed: {e}")
             return []
 
+    def get_hgb_feature_importance(self):
+        """Permutation importance computed at train time (includes 'rule_signal')."""
+        return list(self.hgb_importances or [])
+
     # ── Persistence ───────────────────────────────────────────────────────
+    # Dict format (v2) so the tri-model bundle can grow without positional
+    # tuple breakage. Also carries the feature list so a stale pkl trained on a
+    # different feature set is detected and retrained rather than served wrong.
     def save(self, path="models/stock_model.pkl"):
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
+            bundle = {
+                "version":         2,
+                "feature_names":   list(FEATURE_NAMES),
+                "model":           self.model,
+                "scaler":          self.scaler,
+                "xgb_model":       self.xgb_model,
+                "xgb_trained":     self.xgb_trained,
+                "hgb_model":       self.hgb_model,
+                "hgb_trained":     self.hgb_trained,
+                "hgb_importances": self.hgb_importances,
+            }
             with open(path, "wb") as f:
-                pickle.dump((self.model, self.scaler, self.xgb_model, self.xgb_trained), f)
-            print(f"✅ Model saved to {path}")
+                pickle.dump(bundle, f)
+            print(f"[ok] Model saved to {path}")
         except Exception as e:
-            print(f"⚠️ Could not save model: {e}")
+            print(f"[warn] Could not save model: {e}")
 
     def load(self, path="models/stock_model.pkl"):
-        if os.path.exists(path):
-            try:
-                with open(path, "rb") as f:
-                    loaded = pickle.load(f)
-                if isinstance(loaded, tuple) and len(loaded) == 4:
-                    self.model, self.scaler, self.xgb_model, self.xgb_trained = loaded
-                    print("✅ Loaded trained model from disk (with XGBoost)")
-                    self.trained = True
-                    return True
-                else:
-                    print("⚠️ Old model format — retraining with Indian data...")
-                    return False
-            except Exception as e:
-                print(f"⚠️ Could not load model: {e}")
+        if not os.path.exists(path):
+            return False
+        try:
+            with open(path, "rb") as f:
+                loaded = pickle.load(f)
+
+            if not isinstance(loaded, dict) or loaded.get("version") != 2:
+                print("[warn] Old model format — retraining with Indian data...")
+                return False
+
+            if loaded.get("feature_names") != list(FEATURE_NAMES):
+                print("[warn] Feature set changed since this pkl was trained — retraining...")
+                return False
+
+            self.model           = loaded["model"]
+            self.scaler          = loaded["scaler"]
+            self.xgb_model       = loaded.get("xgb_model")
+            self.xgb_trained     = loaded.get("xgb_trained", False)
+            self.hgb_model       = loaded.get("hgb_model")
+            self.hgb_trained     = loaded.get("hgb_trained", False)
+            self.hgb_importances = loaded.get("hgb_importances", [])
+            self.trained = True
+            print("[ok] Loaded trained model from disk (RF + XGBoost + Hybrid HGB)")
+            return True
+        except Exception as e:
+            print(f"[warn] Could not load model: {e}")
         return False

@@ -444,7 +444,7 @@ table tbody tr:last-child td { border-bottom: none; }
 .disagree-msg.ok   { color: var(--green); }
 
 /* Drivers */
-.drivers-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.drivers-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
 .drivers-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 18px; }
 .drivers-card-header { display: flex; align-items: center; gap: 8px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
 .drivers-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
@@ -458,6 +458,41 @@ table tbody tr:last-child td { border-bottom: none; }
 .fi-fill { height: 100%; border-radius: 3px; transition: width 0.9s ease; }
 .drivers-bar-fill--rf { background: var(--accent); }
 .drivers-bar-fill--xgb { background: var(--blue); }
+
+/* ── Third model (rule-aware hybrid) — violet accent ─────────────────────────── */
+.ai-signal-card--hgb { border-top: 2px solid #8b5cf6; }
+.confidence-fill--violet { background: #8b5cf6; }
+.drivers-dot--hgb { background: #8b5cf6; }
+.drivers-bar-fill--hgb { background: #8b5cf6; }
+
+/* Consensus rule cross-check line */
+.consensus-rule { font-size: 0.78rem; color: var(--text-secondary); margin: 0 0 10px; }
+.consensus-rule strong.buy  { color: var(--green); }
+.consensus-rule strong.hold { color: var(--amber); }
+.consensus-rule strong.sell { color: var(--red); }
+
+/* ── Merits / Demerits ───────────────────────────────────────────────────────── */
+.merits-card { margin: 22px 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px 22px; }
+.merits-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.merits-col { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 18px; }
+.merits-col--pro { border-left: 3px solid var(--green); }
+.merits-col--con { border-left: 3px solid var(--red); }
+.merits-col-head { display: flex; align-items: center; gap: 8px; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.merits-col-head--pro { color: var(--green); }
+.merits-col-head--con { color: var(--red); }
+.merits-icon { font-size: 11px; }
+.merits-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.merits-list li { display: flex; flex-direction: column; gap: 3px; }
+.merits-title { font-size: 0.82rem; font-weight: 600; color: var(--text-primary); }
+.merits-detail { font-size: 0.78rem; line-height: 1.55; color: var(--text-secondary); }
+.merits-foot { font-size: 0.72rem; color: var(--text-muted); margin: 14px 0 0; }
+
+/* Diversification label */
+.diversification-label { color: var(--text-muted); font-weight: 400; }
+
+@media (max-width: 640px) {
+  .merits-grid { grid-template-columns: 1fr; }
+}
 
 /* ── Skeleton loading ───────────────────────────────────────────────────────── */
 .skeleton-block { }

@@ -1,3 +1,14 @@
+# Windows consoles default to cp1252, which can't encode the emoji many modules
+# print (✅/⚠️/❌) — an emoji print then raises UnicodeEncodeError mid-request and
+# cascades into a 500. Force UTF-8 (errors="replace") at the entry point so every
+# print across every module is safe, regardless of the console code page.
+import sys
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 # NOTE: torch must be imported before MKL/OpenMP libraries (numpy, scikit-learn,
 # xgboost). On Windows, loading torch after them triggers a DLL init conflict
 # (WinError 1114 loading c10.dll) that silently disables FinBERT sentiment.
@@ -78,6 +89,23 @@ def sanitize_for_json(obj):
 
     return obj
 
+# This app is India-only. Force every ticker onto an Indian exchange (NSE by
+# default, BSE if the user explicitly passes .BO). A US symbol like AAPL becomes
+# AAPL.NS, which won't validate — so the analysis stays Indo-specific.
+_INDIA_SUFFIXES = ('.NS', '.BO')
+
+
+def normalize_indian_ticker(raw):
+    t = (raw or '').upper().strip()
+    if not t:
+        return t
+    if t.endswith(_INDIA_SUFFIXES):
+        return t
+    if '.' in t:                      # strip a foreign exchange suffix
+        t = t.split('.')[0]
+    return t + '.NS'
+
+
 @app.route('/api/analyze-stock', methods=['POST'])
 def analyze_stock():
     try:
@@ -85,7 +113,7 @@ def analyze_stock():
         if not data:
             return jsonify({'success': False, 'error': 'Request body is required'}), 400
 
-        ticker = data.get('ticker', '').upper().strip()
+        ticker = normalize_indian_ticker(data.get('ticker', ''))
         if not ticker:
             return jsonify({'success': False, 'error': 'Stock ticker is required'}), 400
 
@@ -98,7 +126,9 @@ def analyze_stock():
 
         fetcher = StockDataFetcher(ticker)
         if not fetcher.validate_ticker():
-            return jsonify({'success': False, 'error': 'Invalid or unsupported stock ticker'}), 400
+            return jsonify({'success': False,
+                            'error': f'"{ticker}" is not a valid Indian (NSE/BSE) stock. '
+                                     'This tool is India-only — try names like RELIANCE, TCS, INFY, HDFCBANK.'}), 400
 
         # ✅ FIX: Analyzer reuses the fetcher — avoids double network call
         analyzer = StockRiskAnalyzer(ticker, risk_appetite=risk_appetite, horizon=horizon)

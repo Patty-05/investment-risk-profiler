@@ -13,6 +13,7 @@ from modules.sentiment import EnhancedSentimentAnalyzer
 from modules.volumetric_analysis import VolumetricAnalyzer
 from modules.sector_comparison import SectorComparator
 from modules.geopolitical_analysis import GeopoliticalAnalyzer
+from modules.merits_analysis import build_merits
 from models.feature_engineer import FeatureEngineer
 from models.stock_model import StockRiskModel
 from services.gemini_service import generate_ai_insight
@@ -185,6 +186,9 @@ class StockRiskAnalyzer:
                 feature_engineer.get_feature_names()
             )
 
+            # Hybrid (rule-aware HGB) permutation importance — includes rule_signal
+            hgb_feature_importance = stock_model.get_hgb_feature_importance()
+
             # =========================
             # 🔹 EXPLAINABILITY
             # =========================
@@ -243,12 +247,19 @@ class StockRiskAnalyzer:
 
                 'explanation': explain(feature_dict),
 
-                # ── XGBoost (NEW) ─────────────────────────────────────────
+                # ── Tri-model intelligence ────────────────────────────────
                 'xgb_prediction':       ml_result.get('xgb_prediction'),
                 'xgb_confidence':       ml_result.get('xgb_confidence'),
-                'xgb_probabilities':    ml_result.get('xgb_probabilities'),
+                'hgb_prediction':       ml_result.get('hgb_prediction'),
+                'hgb_confidence':       ml_result.get('hgb_confidence'),
                 'model_disagreement':   ml_result.get('model_disagreement', False),
+                'consensus':            ml_result.get('consensus'),
+                'rule_signal':          ml_result.get('rule_signal'),
+
+                # Per-model key drivers (global feature importance)
+                'feature_importance':     feature_importance,
                 'xgb_feature_importance': xgb_feature_importance,
+                'hgb_feature_importance': hgb_feature_importance,
             }
 
             # =========================
@@ -261,6 +272,11 @@ class StockRiskAnalyzer:
                 horizon=self.horizon,
             )
             results["portfolio"] = portfolio
+
+            # =========================
+            # 🔹 MERITS / DEMERITS — why-to-buy vs why-not (deterministic)
+            # =========================
+            results["merits_analysis"] = build_merits(results)
 
             # =========================
             # 🔹 GEMINI AI — India-aware reasoning layer over the full analysis

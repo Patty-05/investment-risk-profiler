@@ -20,7 +20,15 @@ import numpy as np
 import pandas as pd
 
 # Canonical model feature order — used everywhere.
+# Every feature is reconstructable per-bar from OHLCV history, so the training
+# distribution matches inference exactly. Expanded (2026-08) from 12 → 24: the
+# original core plus a wider technical/price-derived set (MACD, stochastic, CCI,
+# trend strength, multi-window ROC/momentum, 52-week positioning, volatility
+# regime, downside deviation, return skew, OBV trend). Fundamentals/sentiment
+# are deliberately NOT here — yfinance can't reconstruct them historically, so
+# they'd reintroduce a train/serve mismatch; they remain separate app factors.
 FEATURE_NAMES = [
+    # ── original core ──────────────────────────────────────────────────────
     "rsi",
     "returns",
     "momentum_5d",
@@ -33,6 +41,19 @@ FEATURE_NAMES = [
     "bollinger_position",
     "sharpe_ratio",
     "atr_pct",
+    # ── expanded technical / price-derived set ─────────────────────────────
+    "macd_hist",         # MACD histogram, normalised by price
+    "stoch_k",           # stochastic %K (0-1) over 14
+    "cci",               # commodity channel index (clipped)
+    "trend_strength",    # (sma20 - sma50) / sma50
+    "roc_10",            # 10-day rate of change
+    "momentum_60d",      # ~quarter momentum
+    "dist_52w_high",     # distance below the rolling 252-day high
+    "dist_52w_low",      # distance above the rolling 252-day low
+    "vol_regime",        # short (10d) vs long (60d) volatility ratio
+    "downside_dev",      # 20-day downside deviation (negative returns only)
+    "return_skew",       # 20-day return skew
+    "obv_trend",         # normalised 10-day OBV momentum
 ]
 
 
@@ -52,6 +73,35 @@ def _atr_pct(df, window=14):
         axis=1,
     ).max(axis=1)
     return tr.rolling(window).mean() / (close + 1e-9)
+
+
+def _macd_hist(close, fast=12, slow=26, signal=9):
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    macd = ema_fast - ema_slow
+    sig = macd.ewm(span=signal, adjust=False).mean()
+    return (macd - sig) / (close + 1e-9)
+
+
+def _stoch_k(df, window=14):
+    low_n = df["Low"].rolling(window).min()
+    high_n = df["High"].rolling(window).max()
+    return (df["Close"] - low_n) / ((high_n - low_n) + 1e-9)
+
+
+def _cci(df, window=20):
+    tp = (df["High"] + df["Low"] + df["Close"]) / 3
+    sma_tp = tp.rolling(window).mean()
+    mad = (tp - sma_tp).abs().rolling(window).mean()
+    return ((tp - sma_tp) / (0.015 * mad + 1e-9)).clip(-300, 300) / 100.0
+
+
+def _obv_trend(close, volume, window=10):
+    direction = np.sign(close.diff()).fillna(0.0)
+    obv = (direction * volume).cumsum()
+    # Normalise the 10-day OBV change by recent turnover so it's scale-free.
+    scale = (volume.rolling(20).mean() * window) + 1e-9
+    return ((obv - obv.shift(window)) / scale).clip(-5, 5)
 
 
 class FeatureEngineer:
@@ -76,6 +126,7 @@ class FeatureEngineer:
         std20 = close.rolling(20).std()
 
         out = pd.DataFrame(index=df.index)
+        # ── original core ──────────────────────────────────────────────────
         out["rsi"] = _rsi(close)
         out["returns"] = returns
         out["momentum_5d"] = close.pct_change(5)
@@ -90,6 +141,26 @@ class FeatureEngineer:
             returns.rolling(20).mean() / (returns.rolling(20).std() + 1e-9)
         ).clip(-10, 10)
         out["atr_pct"] = _atr_pct(df)
+
+        # ── expanded technical / price-derived set ─────────────────────────
+        high_252 = close.rolling(252, min_periods=60).max()
+        low_252 = close.rolling(252, min_periods=60).min()
+        vol_short = returns.rolling(10).std()
+        vol_long = returns.rolling(60).std()
+        neg_ret = returns.where(returns < 0, 0.0)
+
+        out["macd_hist"] = _macd_hist(close)
+        out["stoch_k"] = _stoch_k(df)
+        out["cci"] = _cci(df)
+        out["trend_strength"] = (sma20 - sma50) / (sma50 + 1e-9)
+        out["roc_10"] = close.pct_change(10)
+        out["momentum_60d"] = close.pct_change(60)
+        out["dist_52w_high"] = (close - high_252) / (high_252 + 1e-9)
+        out["dist_52w_low"] = (close - low_252) / (low_252 + 1e-9)
+        out["vol_regime"] = (vol_short / (vol_long + 1e-9)).clip(0, 5)
+        out["downside_dev"] = neg_ret.rolling(20).std()
+        out["return_skew"] = returns.rolling(20).skew()
+        out["obv_trend"] = _obv_trend(close, volume)
 
         return out.replace([np.inf, -np.inf], np.nan)
 

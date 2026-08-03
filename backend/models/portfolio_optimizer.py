@@ -42,10 +42,13 @@ class PortfolioOptimizer:
             # ── Base equity weight from the model signal ──────────────────────
             base_weight = {"BUY": 0.6, "HOLD": 0.3}.get(ml_signal, 0.1)
 
-            # Scale by model confidence, then by the stock's own risk
+            # Scale by model confidence, then by the stock's own QUALITY.
+            # `overall_score` is a health score (higher = better / lower-risk),
+            # so a stronger stock should earn MORE equity, not less. The earlier
+            # `1 - score/100` inverted this and starved good names of weight.
             weight = base_weight * (0.5 + confidence)
-            risk_factor = max(0.2, 1 - (risk_score / 100))
-            weight *= risk_factor
+            quality_factor = 0.4 + 0.6 * (risk_score / 100)   # score 40→0.64, 70→0.82
+            weight *= quality_factor
 
             # ── Personalise: apply the investor's risk-appetite cap ───────────
             equity_cap = self._APPETITE_EQUITY_CAP[appetite]
@@ -68,11 +71,6 @@ class PortfolioOptimizer:
             weight = min(weight, equity_cap)
             weight = min(max(weight, 0.05), 0.90)
 
-            if capped:
-                reasons.append(f"{appetite} risk appetite caps equity near {round(equity_cap*100)}%")
-            else:
-                reasons.append(f"{appetite} risk appetite; equity below the {round(equity_cap*100)}% cap")
-
             # ── Defensive split shaped by appetite ────────────────────────────
             split = self._APPETITE_DEFENSIVE_SPLIT[appetite]
             remaining = 1 - weight
@@ -80,46 +78,121 @@ class PortfolioOptimizer:
             portfolio = [
                 {"asset": ticker, "weight": round(weight * 100, 2),
                  "type": "Equity", "sector": sector},
-                {"asset": "Safe Bonds / Debt", "weight": round(remaining * split["bonds"] * 100, 2),
+                {"asset": "Debt / G-Secs (bonds, debt funds)", "weight": round(remaining * split["bonds"] * 100, 2),
                  "type": "Debt"},
-                {"asset": "Gold / Commodities", "weight": round(remaining * split["gold"] * 100, 2),
+                {"asset": "Gold (SGB / gold ETF)", "weight": round(remaining * split["gold"] * 100, 2),
                  "type": "Commodity"},
-                {"asset": "Cash Reserve", "weight": round(remaining * split["cash"] * 100, 2),
+                {"asset": "Cash / Liquid fund", "weight": round(remaining * split["cash"] * 100, 2),
                  "type": "Cash"},
             ]
 
-            diversification_score = round(100 - abs(weight - 0.5) * 100, 2)
+            # ── Diversification score — honest, Herfindahl-based ──────────────
+            # Effective number of asset-class positions = 1 / Σ wᵢ². Normalised
+            # so an equal 4-way split ≈ 100 and an all-in-one-bucket mix ≈ 0.
+            # A heavy single-stock tilt therefore scores LOW (as it should),
+            # instead of the old formula that peaked at a 50% equity weight.
+            fractions = [max(0.0, item["weight"] / 100.0) for item in portfolio]
+            hhi = sum(f * f for f in fractions) or 1.0
+            eff_n = 1.0 / hhi
+            n_buckets = len(portfolio)
+            diversification_score = round(
+                max(0.0, min(100.0, (eff_n - 1.0) / (n_buckets - 1.0) * 100.0)), 1
+            )
+            if diversification_score >= 70:
+                div_label = "Well spread across asset classes"
+            elif diversification_score >= 45:
+                div_label = "Moderately concentrated"
+            else:
+                div_label = "Concentrated — high single-name risk"
 
             # ── Suggestions ───────────────────────────────────────────────────
             suggestions = []
             if ml_signal == "BUY":
-                suggestions.append("Model favours the stock — increase exposure gradually")
+                suggestions.append("Models lean constructive — a staggered (SIP-style) entry beats a lump sum")
             elif ml_signal == "SELL":
-                suggestions.append("Model is bearish — reduce exposure or avoid entry")
+                suggestions.append("Models lean bearish — avoid fresh entry or trim existing exposure")
             if risk_score > 70:
-                suggestions.append("Elevated stock risk — lean on the defensive allocation")
+                suggestions.append("Elevated stock risk — lean on the debt/gold sleeve for ballast")
             if confidence < 0.5:
-                suggestions.append("Low model confidence — avoid aggressive positions")
-            if appetite == "low":
-                suggestions.append("Conservative profile — capital preservation prioritised")
-            elif appetite == "high":
-                suggestions.append("Aggressive profile — higher equity tilt accepted for growth")
+                suggestions.append("Low model confidence — keep the position small until signals firm up")
+            if weight >= 0.5:
+                suggestions.append("This is a heavy single-name bet — hold it inside a diversified core (index funds/ETFs)")
+
+            # ── How your profile SHOULD be shaped (prescriptive, educational) ──
+            guidance = self._profile_guidance(
+                appetite, horizon, risk_score, ml_signal, weight
+            )
 
             return {
                 "allocation": portfolio,
                 "diversification_score": diversification_score,
+                "diversification_label": div_label,
                 "suggestions": suggestions,
-                # Explainability: how the profile shaped this allocation
+                # Prescriptive, educational guidance on how the investor's own
+                # profile should be shaped given THIS stock's risk — not
+                # personalised financial advice.
                 "profile_basis": {
                     "risk_appetite": appetite,
                     "horizon": horizon,
                     "equity_cap_pct": round(equity_cap * 100, 1),
-                    "reasons": reasons,
+                    "capped": capped,
+                    "guidance": guidance,
                 },
             }
 
         except Exception as e:
             return {"allocation": [], "error": str(e)}
+
+    # ── Prescriptive profile guidance ──────────────────────────────────────
+    @staticmethod
+    def _profile_guidance(appetite, horizon, risk_score, ml_signal, weight):
+        """
+        General, educational pointers on how an investor's profile *should* be
+        shaped to hold a stock with this risk character. Non-directive: no
+        buy/sell/allocate instruction, framed as what tends to suit whom.
+        """
+        g = []
+
+        # Risk character of the stock → temperament / horizon it suits
+        if risk_score < 45:
+            g.append("This stock carries above-average risk — it tends to suit investors with a "
+                     "longer horizon and the temperament to sit through sharp drawdowns.")
+        elif risk_score >= 65:
+            g.append("This is a relatively steady name — it fits even conservative, capital-preservation "
+                     "oriented investors as a core holding.")
+        else:
+            g.append("This stock sits in the middle of the risk spectrum — comfortable for a balanced "
+                     "investor who accepts moderate swings for moderate growth.")
+
+        # Horizon shaping
+        if horizon is not None:
+            if horizon <= 3:
+                g.append(f"A {horizon}-year horizon is short for single-stock equity — a longer runway "
+                         "(7y+) or a staggered SIP entry would reduce timing risk.")
+            elif horizon >= 10:
+                g.append(f"Your {horizon}-year horizon is a genuine edge here — it lets you ride out "
+                         "volatility that would hurt a short-term holder.")
+        else:
+            g.append("Set a clear horizon before committing — single-stock equity rewards patience "
+                     "measured in years, not months.")
+
+        # Appetite shaping
+        if appetite == "low":
+            g.append("A low risk appetite argues for anchoring most of the portfolio in debt/gold and "
+                     "keeping this equity a small satellite position.")
+        elif appetite == "high":
+            g.append("An aggressive appetite can carry a heavier equity tilt — but discipline (stop "
+                     "levels, position limits) matters more, not less, as size grows.")
+        else:
+            g.append("A medium appetite is well matched — keep this within a diversified core rather "
+                     "than letting one conviction name dominate.")
+
+        # Concentration reminder
+        if weight >= 0.5:
+            g.append("At this suggested weight the portfolio leans heavily on one stock — broadening "
+                     "into index funds/ETFs would make your profile more resilient.")
+
+        return g
 
     @staticmethod
     def _safe_int(value):

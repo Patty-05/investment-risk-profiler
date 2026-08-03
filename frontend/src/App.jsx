@@ -3,7 +3,6 @@ import './App.css';
 import SeasonalAnalysis from './SeasonalAnalysis';
 
 import { analyzeStock,
-         getAvailableStrategies, backtestStrategy, getStrategySignals,
          getConflicts, analyzeWar,
          useApi, useAppContext, AppProvider } from './services';
 
@@ -132,8 +131,8 @@ function StockAnalysis({ handoff }) {
           <div className="form-group form-group--ticker">
             <label htmlFor="ticker">Stock Ticker</label>
             <input type="text" id="ticker" value={ticker} onChange={(e) => setTicker(e.target.value)}
-              placeholder="e.g. AAPL, MSFT, RELIANCE.NS" required />
-            <small>US: AAPL · India: RELIANCE.NS</small>
+              placeholder="e.g. RELIANCE, TCS, HDFCBANK" required />
+            <small>NSE stocks — the “.NS” is added automatically (BSE: use .BO)</small>
           </div>
 
           <div className="form-group">
@@ -295,6 +294,9 @@ function StockResult({ result, getScoreClass, profile }) {
         </div>
       )}
 
+      {/* Merits / demerits — why buy vs why not */}
+      {result.merits_analysis && <MeritsCard merits={result.merits_analysis} />}
+
       {/* Portfolio allocation (profile-driven) */}
       {result?.portfolio?.allocation && <PortfolioCard portfolio={result.portfolio} profile={profile} />}
 
@@ -311,9 +313,6 @@ function StockResult({ result, getScoreClass, profile }) {
           ))}
         </div>
       )}
-
-      {/* Nested Trading Strategies */}
-      <TradingStrategies defaultTicker={result.ticker} />
     </div>
   );
 }
@@ -392,10 +391,10 @@ function PortfolioCard({ portfolio, profile }) {
         ))}
       </div>
 
-      {basis?.reasons?.length > 0 && (
+      {basis?.guidance?.length > 0 && (
         <div className="portfolio-basis">
-          <span className="basis-label">How your profile shaped this:</span>
-          <ul>{basis.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+          <span className="basis-label">How your profile should be shaped:</span>
+          <ul>{basis.guidance.map((r, i) => <li key={i}>{r}</li>)}</ul>
         </div>
       )}
       {portfolio.suggestions?.length > 0 && (
@@ -403,142 +402,118 @@ function PortfolioCard({ portfolio, profile }) {
           {portfolio.suggestions.map((s, i) => <li key={i}>{s}</li>)}
         </ul>
       )}
-      <p className="diversification">Diversification score: <strong>{portfolio.diversification_score}</strong></p>
-    </div>
-  );
-}
-
-
-// ── Dual-model AI section (extracted, unchanged logic) ─────────────────────
-function AISection({ result }) {
-  return (
-    <div className="ai-section">
-      <div className="ai-section-title">Dual-Model AI Intelligence</div>
-      <div className="ai-signals-row">
-        <div className="ai-signal-card ai-signal-card--rf">
-          <div className="ai-signal-model-label">Calibrated RF</div>
-          <div className={`ml-signal ${result.ml_prediction?.toLowerCase()}`}>{result.ml_prediction}</div>
-          <div className="ai-signal-conf">Confidence: {((result.ml_confidence || 0) * 100).toFixed(1)}%</div>
-          <div className="confidence-bar">
-            <div className="confidence-fill" style={{ width: `${(result.ml_confidence || 0) * 100}%` }} />
-          </div>
-        </div>
-        {result.xgb_prediction && (
-          <div className="ai-signal-card ai-signal-card--xgb">
-            <div className="ai-signal-model-label">XGBoost</div>
-            <div className={`ml-signal ${result.xgb_prediction?.toLowerCase()}`}>{result.xgb_prediction}</div>
-            <div className="ai-signal-conf">Confidence: {((result.xgb_confidence || 0) * 100).toFixed(1)}%</div>
-            <div className="confidence-bar">
-              <div className="confidence-fill confidence-fill--teal" style={{ width: `${(result.xgb_confidence || 0) * 100}%` }} />
-            </div>
-          </div>
-        )}
-        {result.comparison && (
-          <div className="ai-signal-card ai-signal-card--rule">
-            <div className="ai-signal-model-label">Rule vs ML</div>
-            <div className="rule-vs-row"><span className="rule-vs-key">Rule Score</span><span className="rule-vs-val">{result.comparison.rule_score}</span></div>
-            <div className="rule-vs-row"><span className="rule-vs-key">ML Signal</span>
-              <span className={`rule-vs-val ml-signal-sm ${result.comparison.ml_signal?.toLowerCase()}`}>{result.comparison.ml_signal}</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {result.xgb_probabilities && (
-        <>
-          <div className="xgb-section-heading">XGBoost · Probability Distribution</div>
-          <XGBProbabilityPanel probabilities={result.xgb_probabilities} />
-        </>
-      )}
-
-      {result.xgb_prediction && (
-        <>
-          <div className="xgb-section-heading">Dual-Model Consensus</div>
-          <ModelDisagreementPanel rfSignal={result.ml_prediction} xgbSignal={result.xgb_prediction} disagreement={result.model_disagreement} />
-        </>
-      )}
-
-      {(result.feature_importance?.length > 0 || result.xgb_feature_importance?.length > 0) && (
-        <>
-          <div className="xgb-section-heading">Key Drivers · Both Models</div>
-          <div className="drivers-grid">
-            {result.feature_importance?.length > 0 && (
-              <div className="drivers-card">
-                <div className="drivers-card-header drivers-card-header--rf"><span className="drivers-dot drivers-dot--rf" />Calibrated RF</div>
-                <FeatureImportanceBars data={result.feature_importance} fillClass="drivers-bar-fill--rf" />
-              </div>
-            )}
-            {result.xgb_feature_importance?.length > 0 && (
-              <div className="drivers-card">
-                <div className="drivers-card-header drivers-card-header--xgb"><span className="drivers-dot drivers-dot--xgb" />XGBoost</div>
-                <FeatureImportanceBars data={result.xgb_feature_importance} fillClass="drivers-bar-fill--xgb" />
-              </div>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-
-function XGBProbabilityPanel({ probabilities }) {
-  if (!probabilities) return null;
-  const entries = [
-    { label: 'BUY',  value: probabilities.BUY  || 0, cls: 'buy',  icon: '▲' },
-    { label: 'HOLD', value: probabilities.HOLD || 0, cls: 'hold', icon: '◆' },
-    { label: 'SELL', value: probabilities.SELL || 0, cls: 'sell', icon: '▼' },
-  ].sort((a, b) => b.value - a.value);
-
-  return (
-    <div className="prob-panel">
-      <div className="prob-panel-header">
-        <h4>Probability Distribution</h4>
-        <span className={`prob-dominant-chip ${entries[0].cls}`}>{entries[0].label} dominant</span>
-      </div>
-      <div className="prob-bars">
-        {entries.map(({ label, value, cls, icon }) => (
-          <div key={label} className="prob-row">
-            <div className="prob-label-group">
-              <span className="prob-icon" style={{ color: cls === 'buy' ? 'var(--green)' : cls === 'hold' ? 'var(--amber)' : 'var(--red)' }}>{icon}</span>
-              <span className="prob-name">{label}</span>
-            </div>
-            <div className="prob-track"><div className={`prob-fill ${cls}`} style={{ width: `${(value * 100).toFixed(1)}%` }} /></div>
-            <span className={`prob-pct ${cls}`}>{(value * 100).toFixed(1)}%</span>
-          </div>
-        ))}
-      </div>
-      <p className="prob-note">XGBoost softmax probabilities across SELL / HOLD / BUY classes</p>
-    </div>
-  );
-}
-
-
-function ModelDisagreementPanel({ rfSignal, xgbSignal, disagreement }) {
-  if (!rfSignal || !xgbSignal) return null;
-  return (
-    <div className={`disagree-panel ${disagreement ? 'warn' : 'ok'}`}>
-      <div className="disagree-header">
-        <span className="disagree-icon">{disagreement ? '△' : '●'}</span>
-        <h4>{disagreement ? 'Models Disagree — Exercise Caution' : 'Models Agree'}</h4>
-      </div>
-      <div className="disagree-signals">
-        <div className="disagree-model">
-          <span className="disagree-model-name">Calibrated RF</span>
-          <span className={`disagree-signal-chip ${rfSignal.toLowerCase()}`}>{rfSignal}</span>
-        </div>
-        <div className="disagree-vs">vs</div>
-        <div className="disagree-model">
-          <span className="disagree-model-name">XGBoost</span>
-          <span className={`disagree-signal-chip ${xgbSignal.toLowerCase()}`}>{xgbSignal}</span>
-        </div>
-      </div>
-      <p className={`disagree-msg ${disagreement ? 'warn' : 'ok'}`}>
-        {disagreement
-          ? 'The two models reached different conclusions. Consider waiting for stronger confirmation before acting.'
-          : 'Both models independently reached the same conclusion, increasing overall signal confidence.'}
+      <p className="diversification">
+        Diversification score: <strong>{portfolio.diversification_score}</strong>
+        {portfolio.diversification_label && <span className="diversification-label"> · {portfolio.diversification_label}</span>}
       </p>
     </div>
+  );
+}
+
+
+// ── 3-Model AI Intelligence ────────────────────────────────────────────────
+function AISection({ result }) {
+  const consensus = result.consensus;
+  const models = (consensus?.models || []).filter(m => m.signal);
+
+  const cardMod = {
+    'Calibrated RF': 'ai-signal-card--rf',
+    'XGBoost': 'ai-signal-card--xgb',
+    'Hybrid (rule-aware)': 'ai-signal-card--hgb',
+  };
+  const fillMod = {
+    'Calibrated RF': '',
+    'XGBoost': 'confidence-fill--teal',
+    'Hybrid (rule-aware)': 'confidence-fill--violet',
+  };
+
+  const drivers = [
+    { name: 'Calibrated RF',       data: result.feature_importance,     fill: 'drivers-bar-fill--rf',  dot: 'drivers-dot--rf',  head: 'drivers-card-header--rf' },
+    { name: 'XGBoost',             data: result.xgb_feature_importance, fill: 'drivers-bar-fill--xgb', dot: 'drivers-dot--xgb', head: 'drivers-card-header--xgb' },
+    { name: 'Hybrid (rule-aware)', data: result.hgb_feature_importance, fill: 'drivers-bar-fill--hgb', dot: 'drivers-dot--hgb', head: 'drivers-card-header--hgb' },
+  ].filter(d => d.data?.length > 0);
+
+  return (
+    <div className="ai-section">
+      <div className="ai-section-title">3-Model AI Intelligence</div>
+
+      <div className="ai-signals-row">
+        {models.length > 0 ? models.map((m, i) => (
+          <div key={i} className={`ai-signal-card ${cardMod[m.name] || 'ai-signal-card--rf'}`}>
+            <div className="ai-signal-model-label">{m.name}</div>
+            <div className={`ml-signal ${String(m.signal).toLowerCase()}`}>{m.signal}</div>
+            <div className="ai-signal-conf">Confidence: {((m.confidence || 0) * 100).toFixed(1)}%</div>
+            <div className="confidence-bar">
+              <div className={`confidence-fill ${fillMod[m.name] || ''}`} style={{ width: `${(m.confidence || 0) * 100}%` }} />
+            </div>
+          </div>
+        )) : (
+          <div className="ai-signal-card ai-signal-card--rf">
+            <div className="ai-signal-model-label">Calibrated RF</div>
+            <div className={`ml-signal ${result.ml_prediction?.toLowerCase()}`}>{result.ml_prediction}</div>
+            <div className="ai-signal-conf">Confidence: {((result.ml_confidence || 0) * 100).toFixed(1)}%</div>
+          </div>
+        )}
+      </div>
+
+      {consensus && <ConsensusPanel consensus={consensus} />}
+
+      {drivers.length > 0 && (
+        <>
+          <div className="xgb-section-heading">Key Drivers · All Models</div>
+          <div className="drivers-grid">
+            {drivers.map((d, i) => (
+              <div key={i} className="drivers-card">
+                <div className={`drivers-card-header ${d.head}`}><span className={`drivers-dot ${d.dot}`} />{d.name}</div>
+                <FeatureImportanceBars data={d.data} fillClass={d.fill} />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+
+function ConsensusPanel({ consensus }) {
+  const models = (consensus.models || []).filter(m => m.signal);
+  if (models.length === 0) return null;
+  const agree = consensus.agree;
+  const rule = consensus.rule_signal;
+  return (
+    <>
+      <div className="xgb-section-heading">3-Model Consensus</div>
+      <div className={`disagree-panel ${agree ? 'ok' : 'warn'}`}>
+        <div className="disagree-header">
+          <span className="disagree-icon">{agree ? '●' : '△'}</span>
+          <h4>{agree
+            ? 'All three models agree'
+            : `Split — ${consensus.agreement} agree · majority ${consensus.majority}`}</h4>
+        </div>
+        <div className="disagree-signals">
+          {models.map((m, i) => (
+            <React.Fragment key={i}>
+              {i > 0 && <div className="disagree-vs">vs</div>}
+              <div className="disagree-model">
+                <span className="disagree-model-name">{m.name}</span>
+                <span className={`disagree-signal-chip ${String(m.signal).toLowerCase()}`}>{m.signal}</span>
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+        {rule && (
+          <p className="consensus-rule">
+            Rule-engine cross-check: <strong className={String(rule).toLowerCase()}>{rule}</strong>
+          </p>
+        )}
+        <p className={`disagree-msg ${agree ? 'ok' : 'warn'}`}>
+          {agree
+            ? 'All three models independently reached the same conclusion, strengthening the signal.'
+            : 'The models diverge — treat the majority as tentative and wait for stronger confirmation before acting.'}
+        </p>
+      </div>
+    </>
   );
 }
 
@@ -717,173 +692,33 @@ function WarReport({ res, biasClass, onAnalyseTicker }) {
 }
 
 
-// ── Trading Strategies (nested under Stock Analysis) ───────────────────────
-const PAIR_STRATEGIES = ['mean_reversion', 'pairs', 'calendar_spread'];
-
-function TradingStrategies({ defaultTicker = '' }) {
-  const [open, setOpen] = useState(false);
-  const [ticker, setTicker] = useState(defaultTicker);
-  const [pairTicker, setPairTicker] = useState('');
-  const [strategyType, setStrategyType] = useState('trend_following');
-  const [action, setAction] = useState('signals');
-  const [initialCapital, setInitialCapital] = useState(100000);
-
-  const strategiesApi = useApi(getAvailableStrategies);
-  const signalsApi    = useApi(getStrategySignals);
-  const backtestApi   = useApi(backtestStrategy);
-  const { setSignalResult, setBacktestResult } = useAppContext();
-  const activeApi = action === 'signals' ? signalsApi : backtestApi;
-
-  useEffect(() => { if (open) strategiesApi.execute(); }, [open]); // eslint-disable-line
-  useEffect(() => { setTicker(defaultTicker); }, [defaultTicker]);
-
-  const needsPair = PAIR_STRATEGIES.includes(strategyType);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const payload = { ticker, strategy_type: strategyType, pair_ticker: needsPair ? pairTicker : null, initial_capital: Number(initialCapital) };
-    try {
-      if (action === 'signals') { const res = await signalsApi.execute(payload); setSignalResult(res); }
-      else                      { const res = await backtestApi.execute(payload); setBacktestResult(res); }
-    } catch (_) {}
-  };
-
-  const getSignalClass = (sig) => ({ BUY: 'signal-buy', SELL: 'signal-sell' }[sig] ?? 'signal-hold');
-  const sr = signalsApi.data;
-  const br = backtestApi.data;
-
+// ── Merits / Demerits — why buy vs why not ─────────────────────────────────
+function MeritsCard({ merits }) {
+  const pros = merits?.merits || [];
+  const cons = merits?.demerits || [];
+  if (pros.length === 0 && cons.length === 0) return null;
   return (
-    <div className="strategies-section">
-      <button type="button" className="strategies-toggle" onClick={() => setOpen(o => !o)} aria-expanded={open}>
-        <span className="section-label" style={{ margin: 0 }}>Trading Strategies</span>
-        <span className="strategies-hint">{open ? 'Hide' : 'Backtest & signals'} <span className={`ac-chev ${open ? 'up' : ''}`}>⌄</span></span>
-      </button>
-
-      {open && (
-        <div className="strategies-body">
-          <form onSubmit={handleSubmit} className="strategies-form">
-            <div className="form-group">
-              <label>Action</label>
-              <select value={action} onChange={(e) => setAction(e.target.value)}>
-                <option value="signals">Get Current Signals</option>
-                <option value="backtest">Backtest Strategy</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Strategy</label>
-              <select value={strategyType} onChange={(e) => setStrategyType(e.target.value)}>
-                <option value="trend_following">Trend Following (Momentum)</option>
-                <option value="mean_reversion">Mean Reversion (Pairs)</option>
-                <option value="technical">Technical Indicators</option>
-                <option value="calendar_spread">Calendar Spread</option>
-              </select>
-              {strategiesApi.data && <small>{strategiesApi.data[strategyType]?.description}</small>}
-            </div>
-            <div className="form-group">
-              <label>Ticker</label>
-              <input type="text" value={ticker} onChange={(e) => setTicker(e.target.value)} placeholder="e.g. AAPL" required />
-            </div>
-            {needsPair && (
-              <div className="form-group">
-                <label>Pair / Contract</label>
-                <input type="text" value={pairTicker} onChange={(e) => setPairTicker(e.target.value)} placeholder="e.g. MSFT" required />
-              </div>
-            )}
-            {action === 'backtest' && (
-              <div className="form-group">
-                <label>Initial Capital ($)</label>
-                <input type="number" value={initialCapital} onChange={(e) => setInitialCapital(e.target.value)} min="1000" step="1000" />
-              </div>
-            )}
-            <button type="submit" className="btn btn--primary" disabled={activeApi.loading}>
-              {activeApi.loading ? 'Processing…' : action === 'signals' ? 'Get Signals' : 'Run Backtest'}
-            </button>
-          </form>
-          {activeApi.error && <div className="error">{activeApi.error}</div>}
-
-          {sr?.success && action === 'signals' && (
-            <div className="strategy-result">
-              <h3>Signal · {sr.ticker}</h3>
-              <div className={`strategy-signal ${getSignalClass(sr.current_signal.signal_text)}`}>
-                <div className="signal-display">
-                  <div className="signal-value">{sr.current_signal.signal_text}</div>
-                  <div className="signal-details">
-                    <p>Price: ${Number(sr.current_signal.current_price).toFixed(2)}</p>
-                    <p>Position: {sr.current_signal.position}</p>
-                    <p>Date: {sr.current_signal.date}</p>
-                  </div>
-                </div>
-              </div>
-              {sr.position_size && (
-                <div className="position-recommendation">
-                  <h4>Position Size</h4>
-                  {typeof sr.position_size === 'number'
-                    ? <p>Recommended Shares: {sr.position_size}</p>
-                    : <><p>Hedge Ratio: {sr.position_size.hedge_ratio}</p><p>Stock Y Shares: {sr.position_size.stock_y_shares}</p><p>Stock X Shares: {sr.position_size.stock_x_shares}</p></>}
-                </div>
-              )}
-              <div className="recommendation"><p><strong>Recommendation:</strong> {sr.recommendation}</p></div>
-            </div>
-          )}
-
-          {br?.success && action === 'backtest' && br.backtest_results && (
-            <div className="strategy-result">
-              <h3>Backtest · {br.ticker}</h3>
-              <div className="backtest-grid">
-                <div className="backtest-card">
-                  <h4>Returns</h4>
-                  <div className="metric-value">{br.backtest_results.total_return_pct}%</div>
-                  <p>Initial: ${Number(br.backtest_results.initial_capital).toLocaleString()}</p>
-                  <p>Final: ${Number(br.backtest_results.final_capital).toLocaleString()}</p>
-                </div>
-                <div className="backtest-card">
-                  <h4>Trades</h4>
-                  <div className="metric-value">{br.backtest_results.total_trades}</div>
-                  <p>Win Rate: {br.backtest_results.win_rate_pct}%</p>
-                </div>
-                <div className="backtest-card">
-                  <h4>Risk</h4>
-                  <div className="metric-value">{br.backtest_results.max_drawdown_pct}%</div>
-                  <p>Max Drawdown</p>
-                  <p>Sharpe: {br.backtest_results.sharpe_ratio}</p>
-                </div>
-                <div className="backtest-card">
-                  <h4>Breakdown</h4>
-                  <p>Wins: {br.backtest_results.winning_trades}</p>
-                  <p>Losses: {br.backtest_results.losing_trades}</p>
-                  <p>Avg Win: ${Number(br.backtest_results.avg_win).toFixed(2)}</p>
-                  <p>Avg Loss: ${Number(br.backtest_results.avg_loss).toFixed(2)}</p>
-                </div>
-              </div>
-              {br.trades?.length > 0 && (
-                <div className="table-container">
-                  <table>
-                    <thead><tr><th>Date</th><th>Action</th><th>Price</th><th>Exit Date</th><th>Exit Price</th><th>P&amp;L</th><th>Return %</th></tr></thead>
-                    <tbody>
-                      {br.trades.map((trade, i) => {
-                        const pnl    = trade.pnl        != null ? Number(trade.pnl).toFixed(2) : null;
-                        const retPct = trade.return_pct != null ? Number(trade.return_pct).toFixed(2) : null;
-                        const exitP  = trade.exit_price != null ? Number(trade.exit_price).toFixed(2) : null;
-                        return (
-                          <tr key={i}>
-                            <td>{trade.date ? new Date(trade.date).toLocaleDateString() : '-'}</td>
-                            <td>{trade.action}</td>
-                            <td>${Number(trade.price).toFixed(2)}</td>
-                            <td>{trade.exit_date ? new Date(trade.exit_date).toLocaleDateString() : '-'}</td>
-                            <td>{exitP ? `$${exitP}` : '-'}</td>
-                            <td className={pnl != null ? (pnl >= 0 ? 'profit' : 'loss') : ''}>{pnl != null ? `$${pnl}` : '-'}</td>
-                            <td className={retPct != null ? (retPct >= 0 ? 'profit' : 'loss') : ''}>{retPct != null ? `${retPct}%` : '-'}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
+    <div className="merits-card">
+      <div className="section-label" style={{ margin: '0 0 12px' }}>Why Buy · Why Not</div>
+      <div className="merits-grid">
+        <div className="merits-col merits-col--pro">
+          <div className="merits-col-head merits-col-head--pro"><span className="merits-icon">▲</span> Why to buy</div>
+          <ul className="merits-list">
+            {pros.map((m, i) => (
+              <li key={i}><span className="merits-title">{m.title}</span><span className="merits-detail">{m.detail}</span></li>
+            ))}
+          </ul>
         </div>
-      )}
+        <div className="merits-col merits-col--con">
+          <div className="merits-col-head merits-col-head--con"><span className="merits-icon">▼</span> Why not to buy</div>
+          <ul className="merits-list">
+            {cons.map((m, i) => (
+              <li key={i}><span className="merits-title">{m.title}</span><span className="merits-detail">{m.detail}</span></li>
+            ))}
+          </ul>
+        </div>
+      </div>
+      <p className="merits-foot">Framed around what investors typically look for — educational, not financial advice.</p>
     </div>
   );
 }
