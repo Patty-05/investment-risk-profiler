@@ -506,6 +506,13 @@ function ConsensusPanel({ consensus }) {
             ? 'All three models agree'
             : `Split — ${consensus.agreement} agree · majority ${consensus.majority}`}</h4>
         </div>
+        {consensus.ensemble_prediction && (
+          <div className="ensemble-row">
+            <span className="ensemble-label">Ensemble (soft-vote)</span>
+            <span className={`ensemble-signal ${String(consensus.ensemble_prediction).toLowerCase()}`}>{consensus.ensemble_prediction}</span>
+            <span className="ensemble-conf">{(consensus.ensemble_confidence * 100).toFixed(1)}% confidence</span>
+          </div>
+        )}
         <div className="disagree-signals">
           {models.map((m, i) => (
             <React.Fragment key={i}>

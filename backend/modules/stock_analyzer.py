@@ -255,6 +255,7 @@ class StockRiskAnalyzer:
                 'hgb_confidence':       ml_result.get('hgb_confidence'),
                 'model_disagreement':   ml_result.get('model_disagreement', False),
                 'consensus':            ml_result.get('consensus'),
+                'ensemble':             ml_result.get('ensemble'),
                 'rule_signal':          ml_result.get('rule_signal'),
 
                 # Per-model key drivers (global feature importance)

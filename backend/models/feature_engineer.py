@@ -19,6 +19,8 @@ override as a heuristic.
 import numpy as np
 import pandas as pd
 
+from models.macro_features import align_macro
+
 # Canonical model feature order — used everywhere.
 # Every feature is reconstructable per-bar from OHLCV history, so the training
 # distribution matches inference exactly. Expanded (2026-08) from 12 → 24: the
@@ -54,6 +56,14 @@ FEATURE_NAMES = [
     "downside_dev",      # 20-day downside deviation (negative returns only)
     "return_skew",       # 20-day return skew
     "obv_trend",         # normalised 10-day OBV momentum
+    # ── market context (new data sources: Nifty, India VIX) ────────────────
+    # Deliberately only the STOCK-SPECIFIC / regime signals — the absolute
+    # market-direction features (mkt_ret_20d, mkt_trend, VIX level, USD/INR)
+    # were dropped: being identical across every stock on a given date, they
+    # dominated and homogenised all predictions toward the market's direction,
+    # destroying stock-to-stock differentiation.
+    "vix_z",             # India VIX z-score — the fear/vol regime (context)
+    "rs_20d",            # relative strength: stock 20d momentum minus Nifty's
 ]
 
 
@@ -161,6 +171,15 @@ class FeatureEngineer:
         out["downside_dev"] = neg_ret.rolling(20).std()
         out["return_skew"] = returns.rolling(20).skew()
         out["obv_trend"] = _obv_trend(close, volume)
+
+        # ── market context ─────────────────────────────────────────────────
+        # Joined by date so train and serve see identical values. We use only
+        # the VIX regime (context) and relative strength (stock-specific), not
+        # the absolute market-direction series — see FEATURE_NAMES note.
+        # `mkt_ret_20d` is used only to derive rs_20d; it is NOT a model feature.
+        macro = align_macro(df.index)
+        out["vix_z"] = macro["vix_z"].values
+        out["rs_20d"] = out["momentum_20d"] - macro["mkt_ret_20d"].values
 
         return out.replace([np.inf, -np.inf], np.nan)
 

@@ -452,6 +452,13 @@ table tbody tr:last-child td { border-bottom: none; }
 .disagree-signal-chip.hold { background: var(--amber-dim); color: var(--amber); }
 .disagree-signal-chip.sell { background: var(--red-dim);   color: var(--red); }
 .disagree-vs { font-size: 0.7rem; color: var(--text-muted); font-family: var(--mono); background: var(--surface-2); padding: 0 12px; display: flex; align-items: center; }
+.ensemble-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.ensemble-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+.ensemble-signal { font-family: var(--mono); font-size: 0.82rem; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
+.ensemble-signal.buy { color: var(--green); background: var(--green-dim); }
+.ensemble-signal.hold { color: var(--amber); background: var(--amber-dim); }
+.ensemble-signal.sell { color: var(--red); background: var(--red-dim); }
+.ensemble-conf { font-family: var(--mono); font-size: 0.8rem; color: var(--text-secondary); margin-left: auto; }
 .disagree-msg { font-size: 0.8rem; line-height: 1.6; margin: 0; }
 .disagree-msg.warn { color: var(--amber); }
 .disagree-msg.ok   { color: var(--green); }

@@ -437,6 +437,16 @@ class StockRiskModel:
         rf_vote = labels[pred]
         rf_conf = float(np.max(probs))
 
+        # Map any model's proba (in its own class order) to a [SELL,HOLD,BUY] vec.
+        def _to_vec(proba, classes):
+            v = np.zeros(3, dtype=float)
+            for i, cls in enumerate(classes):
+                v[int(cls)] = float(proba[i])
+            return v
+
+        rf_vec = _to_vec(probs, self.model.classes_)
+        proba_vecs = [rf_vec]
+
         result = {
             "prediction":    final_prediction,
             "confidence":    float(np.max(list(prob_dict.values()))) * 0.8 + 0.2,
@@ -453,6 +463,7 @@ class StockRiskModel:
                 xgb_proba = self.xgb_model.predict_proba(features_scaled)[0]
                 xgb_vote  = labels[int(xgb_pred)]
                 xgb_conf  = float(np.max(xgb_proba))
+                proba_vecs.append(_to_vec(xgb_proba, self.xgb_model.classes_))
             except Exception as e:
                 print(f"[warn] XGBoost inference failed: {e}")
 
@@ -466,6 +477,7 @@ class StockRiskModel:
                 hgb_proba = self.hgb_model.predict_proba(hybrid_input)[0]
                 hgb_vote  = labels[int(hgb_pred)]
                 hgb_conf  = float(np.max(hgb_proba))
+                proba_vecs.append(_to_vec(hgb_proba, self.hgb_model.classes_))
             except Exception as e:
                 print(f"[warn] Hybrid HGB inference failed: {e}")
 
@@ -474,6 +486,19 @@ class StockRiskModel:
         result["xgb_confidence"]  = xgb_conf
         result["hgb_prediction"]  = hgb_vote
         result["hgb_confidence"]  = hgb_conf
+
+        # ── Soft-voting ensemble ───────────────────────────────────────────
+        # Average the models' probability vectors. Averaging cuts each model's
+        # variance, so when they broadly agree the combined confidence is both
+        # higher and better calibrated than any single model on its own.
+        ens_vec = np.mean(proba_vecs, axis=0)
+        ens_idx = int(np.argmax(ens_vec))
+        ensemble = {
+            "prediction":  labels[ens_idx],
+            "confidence":  float(ens_vec[ens_idx]),
+            "probabilities": {labels[i]: float(ens_vec[i]) for i in range(3)},
+        }
+        result["ensemble"] = ensemble
 
         # ── 3-model consensus ──────────────────────────────────────────────
         members = [
@@ -494,6 +519,8 @@ class StockRiskModel:
                 "majority":    majority,
                 "n_models":    n_models,
                 "rule_signal": rule_signal,
+                "ensemble_prediction": ensemble["prediction"],
+                "ensemble_confidence": ensemble["confidence"],
             }
         else:
             result["consensus"] = None
