@@ -246,6 +246,10 @@ class StockRiskAnalyzer:
                     'ml_signal':  ml_result['prediction']
                 },
 
+                # P(beats the Nifty over the next ~20 trading days), soft-vote
+                # ensemble — the headline number for the relative-performance model.
+                'outperform_probability': (ml_result.get('ensemble') or {}).get('outperform_probability'),
+
                 'explanation': explain(feature_dict),
 
                 # ── Tri-model intelligence ────────────────────────────────
@@ -491,39 +495,3 @@ class StockRiskAnalyzer:
             return 'High Risk / Avoid'
         else:
             return 'Very High Risk / Sell'
-
-    #def generate_ai_summary(result, ml_result):
-        summary = []
-
-        # ML signal
-        if ml_result['prediction'] == "BUY":
-            summary.append("The AI model indicates a potential buying opportunity.")
-        elif ml_result['prediction'] == "SELL":
-            summary.append("The AI model signals possible downside risk.")
-        else:
-            summary.append("The AI model suggests holding the stock for now.")
-
-        # Overall score
-        score = result['overall_score']['score']
-        if score > 70:
-            summary.append("Overall indicators are strong and supportive.")
-        elif score > 50:
-            summary.append("Indicators are mixed with moderate strength.")
-        else:
-            summary.append("Weak signals detected across multiple factors.")
-
-        # Technical
-        tech = result.get('technical_analysis', {})
-        if tech.get('signal') == "Bullish":
-            summary.append("Technical indicators show bullish momentum.")
-        elif tech.get('signal') == "Bearish":
-            summary.append("Technical indicators suggest downward pressure.")
-
-        # Sentiment
-        sentiment = result.get('sentiment_analysis', {})
-        if sentiment.get('score', 50) > 60:
-            summary.append("Market sentiment appears positive.")
-        elif sentiment.get('score', 50) < 40:
-            summary.append("Market sentiment is weak or negative.")
-
-        return " ".join(summary)

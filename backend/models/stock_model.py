@@ -8,7 +8,8 @@ import os
 import pickle
 from models.data_builder import DataBuilder
 from models.feature_engineer import FEATURE_NAMES
-from sklearn.metrics import accuracy_score, precision_score, recall_score, confusion_matrix
+from sklearn.metrics import (accuracy_score, precision_score, recall_score,
+                             confusion_matrix, roc_auc_score)
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.utils.class_weight import compute_sample_weight
 from collections import Counter
@@ -17,6 +18,10 @@ from collections import Counter
 # the rule engine's net technical score. So its vote reflects how the learned
 # patterns line up with the rule system — "a mix of model + rule".
 HYBRID_FEATURE_NAMES = list(FEATURE_NAMES) + ["rule_signal"]
+
+# Binary target: does the stock beat the Nifty 50 over the next 20 trading days?
+# Index 0 = UNDERPERFORM, 1 = OUTPERFORM (matches DataBuilder's label encoding).
+LABELS = ["UNDERPERFORM", "OUTPERFORM"]
 
 try:
     from xgboost import XGBClassifier
@@ -124,11 +129,13 @@ class StockRiskModel:
         self.hgb_importances = []   # permutation importance, computed at train
         self.metrics     = {}
 
-    # ── Rule-based override — fixes HOLD bias ──────────────────────────────
+    # ── Rule-based cross-check ─────────────────────────────────────────────
     def _rule_based_signal(self, feature_dict: dict):
         """
-        Scores multiple technical indicators. Returns 'SELL'/'BUY' when
-        >= 2 indicators align, otherwise None (let ML decide).
+        Scores multiple technical indicators. Returns 'UNDERPERFORM'/'OUTPERFORM'
+        when >= 2 indicators align, otherwise None (let ML decide). The signal is
+        relative — strong technicals suggest the stock beats the index, not that
+        it rises in absolute terms.
         """
         score = 0
         rsi          = feature_dict.get("rsi", 50)
@@ -154,8 +161,8 @@ class StockRiskModel:
         if bollinger < _LOW_BOLLINGER:          score += 1
         if sentiment > 65:                      score += 1
 
-        if score <= -2: return "SELL"
-        if score >= 2:  return "BUY"
+        if score <= -2: return "UNDERPERFORM"
+        if score >= 2:  return "OUTPERFORM"
         return None
 
     # ── Numeric rule score (price-derived only) for the hybrid model ───────
@@ -261,14 +268,18 @@ class StockRiskModel:
         dist = Counter(int(v) for v in y)
         print(f"[model] Real NSE data: {len(X)} samples from {ok} tickers "
               f"({skipped} skipped)")
-        print(f"[model] Class distribution — SELL:{dist.get(0,0)} "
-              f"HOLD:{dist.get(1,0)} BUY:{dist.get(2,0)}")
+        n_under, n_out = dist.get(0, 0), dist.get(1, 0)
+        total = max(1, n_under + n_out)
+        print(f"[model] Class distribution (vs Nifty, {DataBuilder.HORIZON}d) — "
+              f"UNDERPERFORM:{n_under} OUTPERFORM:{n_out} "
+              f"(baseline {max(n_under, n_out) / total:.3f})")
 
         X_scaled = self.scaler.fit_transform(X)
 
         # ── Calibrated RF ─────────────────────────────────────────────────
-        # class_weight='balanced' handles the natural HOLD-heavy skew of real
-        # 5-day-forward-return labels without any synthetic rebalancing.
+        # The relative-performance target is near 50/50 by construction, but
+        # class_weight='balanced' is kept so any residual skew is handled
+        # without fabricating rows.
         base_rf = RandomForestClassifier(
             n_estimators=300,
             max_depth=12,
@@ -308,7 +319,7 @@ class StockRiskModel:
                     subsample=0.8, colsample_bytree=0.7,
                     reg_alpha=0.1, reg_lambda=1.5,
                     min_child_weight=3, gamma=0.1,
-                    eval_metric='mlogloss',
+                    eval_metric='logloss',
                     use_label_encoder=False,
                     random_state=42, verbosity=0, n_jobs=-1
                 )
@@ -321,7 +332,7 @@ class StockRiskModel:
                         xgb_cv = XGBClassifier(
                             n_estimators=400, max_depth=5, learning_rate=0.05,
                             subsample=0.8, colsample_bytree=0.7,
-                            eval_metric='mlogloss', random_state=42, verbosity=0
+                            eval_metric='logloss', random_state=42, verbosity=0
                         )
                         xgb_scores = cross_val_score(xgb_cv, X_scaled, y, cv=skf, scoring='accuracy')
                         print(f"  XGB CV accuracy: {xgb_scores.mean():.3f} ± {xgb_scores.std():.3f}")
@@ -394,8 +405,18 @@ class StockRiskModel:
             "recall":           round(recall_score(y, y_pred, average='weighted', zero_division=0), 3),
             "confusion_matrix": confusion_matrix(y, y_pred).tolist()
         }
+        # ROC-AUC is the honest headline for a binary target: it measures how
+        # well the model RANKS outperformers, independent of the 0.5 cutoff.
+        try:
+            self.metrics["roc_auc"] = round(
+                roc_auc_score(y, self.model.predict_proba(X_scaled)[:, 1]), 3
+            )
+        except Exception as e:
+            print(f"  [warn] ROC-AUC skipped: {e}")
+
         self.trained = True
-        print(f"[ok] Model trained — train accuracy: {self.metrics['accuracy']}")
+        print(f"[ok] Model trained — train accuracy: {self.metrics['accuracy']} "
+              f"| ROC-AUC: {self.metrics.get('roc_auc', 'n/a')}")
 
     # ── Predict ────────────────────────────────────────────────────────────
     def predict(self, features, feature_dict: dict = None):
@@ -406,52 +427,46 @@ class StockRiskModel:
                 self.save()
 
         features_scaled = self.scaler.transform(features)
-        pred  = self.model.predict(features_scaled)[0]
-        probs = self.model.predict_proba(features_scaled)[0]
-        labels = ["SELL", "HOLD", "BUY"]
+        labels = LABELS
 
-        prob_dict = {"SELL": 0.0, "HOLD": 0.0, "BUY": 0.0}
-        for i, cls in enumerate(self.model.classes_):
-            prob_dict[labels[cls]] = float(probs[i])
-
-        # Rule-based override
-        rule_signal = self._rule_based_signal(feature_dict) if feature_dict else None
-        final_prediction = rule_signal if rule_signal is not None else labels[pred]
-
-        if rule_signal is not None and rule_signal != labels[pred]:
-            override_idx = labels.index(rule_signal)
-            boosted      = min(1.0, probs[override_idx] + 0.35)
-            remaining    = 1.0 - boosted
-            other_sum    = sum(probs[i] for i in range(len(probs)) if i != override_idx)
-            new_probs    = []
-            for i in range(len(probs)):
-                if i == override_idx:
-                    new_probs.append(boosted)
-                else:
-                    new_probs.append(remaining * (probs[i] / other_sum) if other_sum > 0 else remaining / 2)
-            for i, cls in enumerate(self.model.classes_):
-                prob_dict[labels[cls]] = float(new_probs[i])
-
-        # Raw RF vote (before the rule override) — used for the honest 3-model
-        # consensus; the overridden `final_prediction` stays the headline signal.
-        rf_vote = labels[pred]
-        rf_conf = float(np.max(probs))
-
-        # Map any model's proba (in its own class order) to a [SELL,HOLD,BUY] vec.
+        # Map any model's proba (in its own class order) to an
+        # [UNDERPERFORM, OUTPERFORM] vector.
         def _to_vec(proba, classes):
-            v = np.zeros(3, dtype=float)
+            v = np.zeros(2, dtype=float)
             for i, cls in enumerate(classes):
                 v[int(cls)] = float(proba[i])
             return v
 
-        rf_vec = _to_vec(probs, self.model.classes_)
-        proba_vecs = [rf_vec]
+        probs = _to_vec(self.model.predict_proba(features_scaled)[0], self.model.classes_)
+        pred = int(np.argmax(probs))
+
+        prob_dict = {labels[i]: float(probs[i]) for i in range(2)}
+
+        # Rule-based cross-check. It nudges the probability toward the rule's
+        # side rather than hard-flipping the label, so the headline signal still
+        # reflects the model when the model is confident.
+        rule_signal = self._rule_based_signal(feature_dict) if feature_dict else None
+        final_prediction = labels[pred]
+
+        if rule_signal is not None and rule_signal != labels[pred]:
+            override_idx = labels.index(rule_signal)
+            boosted = min(1.0, probs[override_idx] + 0.25)
+            adjusted = np.array([1.0 - boosted, 1.0 - boosted])
+            adjusted[override_idx] = boosted
+            prob_dict = {labels[i]: float(adjusted[i]) for i in range(2)}
+            final_prediction = labels[int(np.argmax(adjusted))]
+
+        # Raw RF vote (before the rule cross-check) — used for the honest
+        # 3-model consensus; `final_prediction` stays the headline signal.
+        rf_vote = labels[pred]
+        rf_conf = float(np.max(probs))
+        proba_vecs = [probs]
 
         result = {
             "prediction":    final_prediction,
-            "confidence":    float(np.max(list(prob_dict.values()))) * 0.8 + 0.2,
+            "confidence":    float(max(prob_dict.values())),
             "probabilities": prob_dict,
-            "rule_override": rule_signal is not None,
+            "rule_override": rule_signal is not None and rule_signal != rf_vote,
             "rule_signal":   rule_signal,
         }
 
@@ -459,11 +474,11 @@ class StockRiskModel:
         xgb_vote, xgb_conf = None, None
         if self.xgb_trained and self.xgb_model is not None:
             try:
-                xgb_pred  = self.xgb_model.predict(features_scaled)[0]
-                xgb_proba = self.xgb_model.predict_proba(features_scaled)[0]
-                xgb_vote  = labels[int(xgb_pred)]
-                xgb_conf  = float(np.max(xgb_proba))
-                proba_vecs.append(_to_vec(xgb_proba, self.xgb_model.classes_))
+                xgb_vec  = _to_vec(self.xgb_model.predict_proba(features_scaled)[0],
+                                   self.xgb_model.classes_)
+                xgb_vote = labels[int(np.argmax(xgb_vec))]
+                xgb_conf = float(np.max(xgb_vec))
+                proba_vecs.append(xgb_vec)
             except Exception as e:
                 print(f"[warn] XGBoost inference failed: {e}")
 
@@ -473,11 +488,11 @@ class StockRiskModel:
             try:
                 rule_val = self._rule_score_row(feature_dict) if feature_dict else 0.0
                 hybrid_input = np.hstack([features_scaled, [[rule_val]]])
-                hgb_pred  = self.hgb_model.predict(hybrid_input)[0]
-                hgb_proba = self.hgb_model.predict_proba(hybrid_input)[0]
-                hgb_vote  = labels[int(hgb_pred)]
-                hgb_conf  = float(np.max(hgb_proba))
-                proba_vecs.append(_to_vec(hgb_proba, self.hgb_model.classes_))
+                hgb_vec  = _to_vec(self.hgb_model.predict_proba(hybrid_input)[0],
+                                   self.hgb_model.classes_)
+                hgb_vote = labels[int(np.argmax(hgb_vec))]
+                hgb_conf = float(np.max(hgb_vec))
+                proba_vecs.append(hgb_vec)
             except Exception as e:
                 print(f"[warn] Hybrid HGB inference failed: {e}")
 
@@ -496,7 +511,9 @@ class StockRiskModel:
         ensemble = {
             "prediction":  labels[ens_idx],
             "confidence":  float(ens_vec[ens_idx]),
-            "probabilities": {labels[i]: float(ens_vec[i]) for i in range(3)},
+            # P(beats the Nifty) — the single most interpretable number here.
+            "outperform_probability": float(ens_vec[1]),
+            "probabilities": {labels[i]: float(ens_vec[i]) for i in range(2)},
         }
         result["ensemble"] = ensemble
 
@@ -555,14 +572,14 @@ class StockRiskModel:
         return list(self.hgb_importances or [])
 
     # ── Persistence ───────────────────────────────────────────────────────
-    # Dict format (v2) so the tri-model bundle can grow without positional
+    # Dict format (v3 — binary relative-performance target) so the bundle can grow without positional
     # tuple breakage. Also carries the feature list so a stale pkl trained on a
     # different feature set is detected and retrained rather than served wrong.
     def save(self, path="models/stock_model.pkl"):
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             bundle = {
-                "version":         2,
+                "version":         3,
                 "feature_names":   list(FEATURE_NAMES),
                 "model":           self.model,
                 "scaler":          self.scaler,
@@ -585,7 +602,7 @@ class StockRiskModel:
             with open(path, "rb") as f:
                 loaded = pickle.load(f)
 
-            if not isinstance(loaded, dict) or loaded.get("version") != 2:
+            if not isinstance(loaded, dict) or loaded.get("version") != 3:
                 print("[warn] Old model format — retraining with Indian data...")
                 return False
 

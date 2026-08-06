@@ -29,24 +29,36 @@ class PortfolioOptimizer:
 
     def optimize(self, stock_result, risk_appetite=None, horizon=None):
         try:
-            ml_signal = stock_result.get("ml_prediction", "HOLD")
-            confidence = stock_result.get("ml_confidence", 0.5)
+            ml_signal = stock_result.get("ml_prediction", "UNDERPERFORM")
             risk_score = stock_result.get("overall_score", {}).get("score", 50)
             sector = stock_result.get("sector_comparison", {}).get("sector", "Unknown")
             ticker = stock_result.get("ticker")
+
+            # P(beats the Nifty over the next ~month), from the soft-vote
+            # ensemble. This is the natural sizing input for a relative-
+            # performance model: 0.5 = coin flip, higher = stronger edge.
+            ensemble = stock_result.get("ensemble") or {}
+            p_out = ensemble.get("outperform_probability")
+            if p_out is None:
+                confidence = stock_result.get("ml_confidence", 0.5)
+                p_out = confidence if ml_signal == "OUTPERFORM" else 1.0 - confidence
+            p_out = max(0.0, min(1.0, float(p_out)))
 
             appetite = (risk_appetite or "medium").strip().lower()
             if appetite not in self._APPETITE_EQUITY_CAP:
                 appetite = "medium"
 
-            # ── Base equity weight from the model signal ──────────────────────
-            base_weight = {"BUY": 0.6, "HOLD": 0.3}.get(ml_signal, 0.1)
+            # ── Base equity weight from the edge over the index ───────────────
+            # Scale the edge (p_out - 0.5) rather than the raw probability, so a
+            # coin-flip read lands on a modest base position and only a genuine
+            # edge earns a heavier one.
+            edge = (p_out - 0.5) * 2.0            # -1 .. +1
+            weight = 0.30 + 0.35 * edge           # ~0.30 at 50/50, up to ~0.65
 
-            # Scale by model confidence, then by the stock's own QUALITY.
-            # `overall_score` is a health score (higher = better / lower-risk),
-            # so a stronger stock should earn MORE equity, not less. The earlier
-            # `1 - score/100` inverted this and starved good names of weight.
-            weight = base_weight * (0.5 + confidence)
+            # Scale by the stock's own QUALITY. `overall_score` is a health score
+            # (higher = better / lower-risk), so a stronger stock earns MORE
+            # equity. (An earlier `1 - score/100` inverted this and starved good
+            # names of weight.)
             quality_factor = 0.4 + 0.6 * (risk_score / 100)   # score 40→0.64, 70→0.82
             weight *= quality_factor
 
@@ -107,14 +119,20 @@ class PortfolioOptimizer:
 
             # ── Suggestions ───────────────────────────────────────────────────
             suggestions = []
-            if ml_signal == "BUY":
-                suggestions.append("Models lean constructive — a staggered (SIP-style) entry beats a lump sum")
-            elif ml_signal == "SELL":
-                suggestions.append("Models lean bearish — avoid fresh entry or trim existing exposure")
+            if p_out >= 0.55:
+                suggestions.append(
+                    f"Models put ~{round(p_out * 100)}% odds on beating the Nifty — "
+                    "a staggered (SIP-style) entry beats a lump sum")
+            elif p_out <= 0.45:
+                suggestions.append(
+                    f"Models put only ~{round(p_out * 100)}% odds on beating the Nifty — "
+                    "a plain index fund may serve this slot better")
+            else:
+                suggestions.append(
+                    "Models see roughly coin-flip odds against the index — "
+                    "no clear edge either way in the next month")
             if risk_score > 70:
                 suggestions.append("Elevated stock risk — lean on the debt/gold sleeve for ballast")
-            if confidence < 0.5:
-                suggestions.append("Low model confidence — keep the position small until signals firm up")
             if weight >= 0.5:
                 suggestions.append("This is a heavy single-name bet — hold it inside a diversified core (index funds/ETFs)")
 

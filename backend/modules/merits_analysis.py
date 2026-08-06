@@ -118,16 +118,20 @@ def build_merits(result: dict) -> dict:
                 f"{d.get('conflict')} pressures this stock via {d.get('sector')} — a macro risk outside "
                 "the company's control.")
 
-    # ── Model consensus (the quant read) ───────────────────────────────────
+    # ── Model consensus (the quant read, relative to the Nifty) ────────────
     if consensus:
         maj = consensus.get("majority")
         agreement = consensus.get("agreement", "")
-        if maj == "BUY":
-            add(merits, "Models lean constructive",
-                f"{agreement} of the models point to BUY — the quant signals agree with a constructive stance.")
-        elif maj == "SELL":
-            add(demerits, "Models lean cautious",
-                f"{agreement} of the models point to SELL — the quant signals flag downside risk.")
+        p_out = (result.get("ensemble") or {}).get("outperform_probability")
+        odds = f" (~{round(p_out * 100)}% odds)" if p_out is not None else ""
+        if maj == "OUTPERFORM":
+            add(merits, "Models expect it to beat the index",
+                f"{agreement} of the models see this outperforming the Nifty over the next month{odds} — "
+                "an edge over simply buying the index.")
+        elif maj == "UNDERPERFORM":
+            add(demerits, "Models expect it to lag the index",
+                f"{agreement} of the models see this trailing the Nifty over the next month{odds} — "
+                "an index fund may do the same job with less single-stock risk.")
         if not consensus.get("agree"):
             add(demerits, "Models don't fully agree",
                 "The three models are split — a reason to wait for cleaner confirmation before sizing up.")

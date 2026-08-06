@@ -452,6 +452,24 @@ table tbody tr:last-child td { border-bottom: none; }
 .disagree-signal-chip.hold { background: var(--amber-dim); color: var(--amber); }
 .disagree-signal-chip.sell { background: var(--red-dim);   color: var(--red); }
 .disagree-vs { font-size: 0.7rem; color: var(--text-muted); font-family: var(--mono); background: var(--surface-2); padding: 0 12px; display: flex; align-items: center; }
+/* Relative-performance framing */
+.ai-section-sub { font-size: 0.78rem; line-height: 1.6; color: var(--text-secondary); margin: -8px 0 16px; }
+.ai-section-sub strong { color: var(--text-primary); }
+
+/* Probability of beating the index */
+.odds-block { margin: 0 0 14px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.odds-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.odds-label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.odds-value { font-family: var(--mono); font-size: 1.35rem; font-weight: 700; }
+.odds-value.up { color: var(--green); }
+.odds-value.down { color: var(--red); }
+.odds-track { position: relative; height: 10px; background: var(--surface-3); border-radius: 6px; overflow: hidden; }
+.odds-fill { height: 100%; border-radius: 6px; transition: width 0.8s ease; }
+.odds-fill.up { background: var(--green); }
+.odds-fill.down { background: var(--red); }
+.odds-mid { position: absolute; top: -2px; bottom: -2px; left: 50%; width: 2px; background: var(--text-muted); opacity: 0.7; }
+.odds-note { font-size: 0.72rem; color: var(--text-muted); margin: 8px 0 0; }
+
 .ensemble-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .ensemble-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
 .ensemble-signal { font-family: var(--mono); font-size: 0.82rem; font-weight: 700; padding: 2px 10px; border-radius: 20px; }

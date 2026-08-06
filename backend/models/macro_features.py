@@ -106,6 +106,29 @@ def get_macro_frame():
     return _INSTANCE.frame()
 
 
+_NIFTY_CLOSE = {"series": None, "loaded": False}
+
+
+def get_nifty_close():
+    """
+    Nifty 50 close series (tz-naive, date-normalised index), cached per process.
+
+    This is the BENCHMARK for the model's label: the target is whether a stock
+    beats this index over the forward horizon, not whether it rises in absolute
+    terms. Returns None if the index can't be fetched.
+    """
+    if _NIFTY_CLOSE["loaded"]:
+        return _NIFTY_CLOSE["series"]
+
+    s = _safe_hist(_NIFTY)
+    if s is not None:
+        s = s[~s.index.duplicated(keep="last")].sort_index()
+        s.index = pd.to_datetime(s.index).tz_localize(None).normalize()
+    _NIFTY_CLOSE["series"] = s
+    _NIFTY_CLOSE["loaded"] = True
+    return s
+
+
 def align_macro(index):
     """Return a macro feature frame reindexed (ffill) onto `index`.
 

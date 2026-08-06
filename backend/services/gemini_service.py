@@ -62,8 +62,11 @@ def _build_context(d):
         f"sector {_fmt(bd.get('sector'))}, geopolitical {_fmt(bd.get('geopolitical'))}"
     )
 
-    # ML tri-model consensus (all trained on Indian NSE data)
+    # ML tri-model consensus (all trained on Indian NSE data).
+    # TARGET: relative performance — will this stock beat the Nifty 50 over the
+    # next ~20 trading days? NOT an absolute up/down or buy/sell call.
     cons = d.get("consensus") or {}
+    ens = d.get("ensemble") or {}
     if cons.get("models"):
         parts = []
         for m in cons["models"]:
@@ -71,15 +74,20 @@ def _build_context(d):
                 parts.append(f"{m.get('name')} = {m.get('signal')} (conf {_fmt(m.get('confidence'), 2)})")
         agree_txt = ("all three agree" if cons.get("agree")
                      else f"{cons.get('agreement')} agree; majority {cons.get('majority')}")
+        p_out = ens.get("outperform_probability")
+        p_txt = (f" Ensemble probability of BEATING the Nifty over the next ~1 month: "
+                 f"{_fmt((p_out or 0) * 100)}%." if p_out is not None else "")
         lines.append(
-            "Three ML models (trained on Indian NSE data): "
+            "Three ML models (trained on Indian NSE data) predict RELATIVE performance — "
+            "whether this stock OUTPERFORMS or UNDERPERFORMS the Nifty 50 over the next "
+            "~20 trading days (not whether it rises in absolute terms): "
             + "; ".join(parts)
-            + f". Consensus: {agree_txt}. The third model is rule-aware (blends the "
+            + f". Consensus: {agree_txt}.{p_txt} The third model is rule-aware (blends the "
               "technical rule engine into its features)."
         )
     else:
         lines.append(
-            f"ML models (Indian NSE data): Random Forest = {d.get('ml_prediction')} "
+            f"ML model (Indian NSE data, relative to Nifty): {d.get('ml_prediction')} "
             f"(conf {_fmt(d.get('ml_confidence'), 2)})."
         )
 
@@ -141,7 +149,7 @@ ANALYSIS DATA
 {context}
 
 Write a tight 5–6 sentence insight in clear, confident plain English with an Indian-market voice (INR, NSE framing). Structure it as:
-1. BOTTOM LINE (first sentence): the overall stance in a few words, the single biggest reason, and what the THREE ML models say together (agree / split, and the majority).
+1. BOTTOM LINE (first sentence): the overall stance in a few words, the single biggest reason, and what the THREE ML models say together about whether it BEATS OR LAGS THE NIFTY over the next month (agree / split, the majority, and the probability). Be precise that this is a call relative to the index, not a prediction that the stock rises or falls.
 2. The key supporting and opposing factors — name the 2–3 that matter most (e.g. sector-relative strength vs weak fundamentals, or a stock-vs-sector sentiment divergence). Be specific.
 3. One line of INDIAN macro context that actually bears on this stock (rate cycle, rupee, crude, monsoon, flows, or Budget/GST) — only if genuinely relevant to its sector.
 4. The GEOPOLITICAL read, India-specific: name the actual conflict channels and whether they help or hurt this stock (only when there is exposure).

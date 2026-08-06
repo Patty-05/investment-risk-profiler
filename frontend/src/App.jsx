@@ -85,6 +85,21 @@ function toneOfScore(s) {
 }
 const titleize = (s) => String(s || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
+// The models predict RELATIVE performance vs the Nifty (OUTPERFORM /
+// UNDERPERFORM). Map those onto the existing green/red signal styles.
+const sigClass = (s) => {
+  const v = String(s || '').toUpperCase();
+  if (v === 'OUTPERFORM') return 'buy';
+  if (v === 'UNDERPERFORM') return 'sell';
+  return 'hold';
+};
+const sigLabel = (s) => {
+  const v = String(s || '').toUpperCase();
+  if (v === 'OUTPERFORM') return 'Outperform';
+  if (v === 'UNDERPERFORM') return 'Underperform';
+  return s;
+};
+
 // TradingView needs an exchange-prefixed symbol (NSE:INFY), not the yfinance
 // "INFY.NS" form — that mismatch is why the chart rendered blank.
 const tvSymbol = (t) => {
@@ -451,12 +466,16 @@ function AISection({ result }) {
   return (
     <div className="ai-section">
       <div className="ai-section-title">3-Model AI Intelligence</div>
+      <p className="ai-section-sub">
+        Each model predicts whether this stock will <strong>beat or lag the Nifty 50</strong> over
+        the next ~1 month — a relative call, not a forecast that the price rises or falls.
+      </p>
 
       <div className="ai-signals-row">
         {models.length > 0 ? models.map((m, i) => (
           <div key={i} className={`ai-signal-card ${cardMod[m.name] || 'ai-signal-card--rf'}`}>
             <div className="ai-signal-model-label">{m.name}</div>
-            <div className={`ml-signal ${String(m.signal).toLowerCase()}`}>{m.signal}</div>
+            <div className={`ml-signal ${sigClass(m.signal)}`}>{sigLabel(m.signal)}</div>
             <div className="ai-signal-conf">Confidence: {((m.confidence || 0) * 100).toFixed(1)}%</div>
             <div className="confidence-bar">
               <div className={`confidence-fill ${fillMod[m.name] || ''}`} style={{ width: `${(m.confidence || 0) * 100}%` }} />
@@ -465,13 +484,14 @@ function AISection({ result }) {
         )) : (
           <div className="ai-signal-card ai-signal-card--rf">
             <div className="ai-signal-model-label">Calibrated RF</div>
-            <div className={`ml-signal ${result.ml_prediction?.toLowerCase()}`}>{result.ml_prediction}</div>
+            <div className={`ml-signal ${sigClass(result.ml_prediction)}`}>{sigLabel(result.ml_prediction)}</div>
             <div className="ai-signal-conf">Confidence: {((result.ml_confidence || 0) * 100).toFixed(1)}%</div>
           </div>
         )}
       </div>
 
-      {consensus && <ConsensusPanel consensus={consensus} />}
+      {consensus && <ConsensusPanel consensus={consensus}
+        outperformProbability={result.outperform_probability ?? result.ensemble?.outperform_probability} />}
 
       {drivers.length > 0 && (
         <>
@@ -491,25 +511,41 @@ function AISection({ result }) {
 }
 
 
-function ConsensusPanel({ consensus }) {
+function ConsensusPanel({ consensus, outperformProbability }) {
   const models = (consensus.models || []).filter(m => m.signal);
   if (models.length === 0) return null;
   const agree = consensus.agree;
   const rule = consensus.rule_signal;
+  const pOut = outperformProbability;
   return (
     <>
-      <div className="xgb-section-heading">3-Model Consensus</div>
+      <div className="xgb-section-heading">3-Model Consensus · vs Nifty 50</div>
       <div className={`disagree-panel ${agree ? 'ok' : 'warn'}`}>
         <div className="disagree-header">
           <span className="disagree-icon">{agree ? '●' : '△'}</span>
           <h4>{agree
             ? 'All three models agree'
-            : `Split — ${consensus.agreement} agree · majority ${consensus.majority}`}</h4>
+            : `Split — ${consensus.agreement} agree · majority ${sigLabel(consensus.majority)}`}</h4>
         </div>
+
+        {pOut != null && (
+          <div className="odds-block">
+            <div className="odds-head">
+              <span className="odds-label">Probability of beating the Nifty (next ~1 month)</span>
+              <span className={`odds-value ${pOut >= 0.5 ? 'up' : 'down'}`}>{(pOut * 100).toFixed(1)}%</span>
+            </div>
+            <div className="odds-track">
+              <div className={`odds-fill ${pOut >= 0.5 ? 'up' : 'down'}`} style={{ width: `${pOut * 100}%` }} />
+              <div className="odds-mid" title="50% = coin flip vs the index" />
+            </div>
+            <p className="odds-note">50% marks a coin flip against the index — the further from the middle, the stronger the edge.</p>
+          </div>
+        )}
+
         {consensus.ensemble_prediction && (
           <div className="ensemble-row">
             <span className="ensemble-label">Ensemble (soft-vote)</span>
-            <span className={`ensemble-signal ${String(consensus.ensemble_prediction).toLowerCase()}`}>{consensus.ensemble_prediction}</span>
+            <span className={`ensemble-signal ${sigClass(consensus.ensemble_prediction)}`}>{sigLabel(consensus.ensemble_prediction)}</span>
             <span className="ensemble-conf">{(consensus.ensemble_confidence * 100).toFixed(1)}% confidence</span>
           </div>
         )}
@@ -519,14 +555,14 @@ function ConsensusPanel({ consensus }) {
               {i > 0 && <div className="disagree-vs">vs</div>}
               <div className="disagree-model">
                 <span className="disagree-model-name">{m.name}</span>
-                <span className={`disagree-signal-chip ${String(m.signal).toLowerCase()}`}>{m.signal}</span>
+                <span className={`disagree-signal-chip ${sigClass(m.signal)}`}>{sigLabel(m.signal)}</span>
               </div>
             </React.Fragment>
           ))}
         </div>
         {rule && (
           <p className="consensus-rule">
-            Rule-engine cross-check: <strong className={String(rule).toLowerCase()}>{rule}</strong>
+            Rule-engine cross-check: <strong className={sigClass(rule)}>{sigLabel(rule)}</strong>
           </p>
         )}
         <p className={`disagree-msg ${agree ? 'ok' : 'warn'}`}>
