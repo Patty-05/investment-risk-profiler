@@ -291,6 +291,13 @@ function StockResult({ result, getScoreClass, profile, onAnalysePeer }) {
             `Sector mood: ${se.sector_sentiment?.score ?? 'N/A'} (${se.sector_sentiment?.label ?? 'N/A'})`,
             `Divergence: ${se.divergence?.label ?? 'N/A'} (${(se.divergence?.value ?? 0) >= 0 ? '+' : ''}${se.divergence?.value ?? 0})`,
           ]}
+          // Surface which scorer actually ran. A silent drop to the keyword
+          // engine used to be invisible, hiding a badly degraded signal.
+          badge={se.engine === 'finbert'
+            ? { text: 'FinBERT', tone: 'good' }
+            : se.engine
+              ? { text: 'keyword fallback', tone: 'bad' }
+              : null}
           explain={sentExplain} />
         <AnalysisCard title="Volumetric" score={v.score} signal={v.signal} explain={volExplain} />
         <AnalysisCard title="Sector" score={sc.score} signal={`${sc.vs_market?.outperformance ?? 0}% vs Market`}
@@ -349,13 +356,13 @@ function StockResult({ result, getScoreClass, profile, onAnalysePeer }) {
 
 
 // ── Analysis card with expandable explainability ───────────────────────────
-function AnalysisCard({ title, score, signal, items = [], explain = [] }) {
+function AnalysisCard({ title, score, signal, items = [], explain = [], badge = null }) {
   const [open, setOpen] = useState(false);
   const tone = toneOfScore(score);
   return (
     <div className={`analysis-card ac--${tone}`}>
       <div className="ac-head">
-        <h4>{title}</h4>
+        <h4>{title}{badge && <span className={`ac-badge ac-badge--${badge.tone}`}>{badge.text}</span>}</h4>
         <span className={`ac-score ac-score--${tone}`}>{score != null ? Number(score).toFixed(0) : 'N/A'}</span>
       </div>
       {signal && <p className="ac-signal">{signal}</p>}

@@ -33,7 +33,7 @@ MACRO_FEATURE_NAMES = [
 ]
 
 
-def _safe_hist(symbol, period="7y"):
+def _safe_hist(symbol, period="10y"):
     try:
         df = yf.Ticker(symbol).history(period=period)
         if df is not None and not df.empty:

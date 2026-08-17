@@ -265,7 +265,12 @@ small { display: block; font-size: 0.76rem; color: var(--text-muted); margin-top
 .ac--bad  { border-top: 2px solid var(--red); }
 .ac--neutral { border-top: 2px solid var(--border-2); }
 .ac-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.ac-head h4 { margin: 0; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); }
+.ac-head h4 { margin: 0; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+/* Engine/provenance badge — makes a silent degradation (e.g. FinBERT dropping
+   to the keyword scorer) visible instead of invisible. */
+.ac-badge { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.03em; text-transform: none; padding: 2px 7px; border-radius: 20px; }
+.ac-badge--good { background: var(--green-dim); color: var(--green); }
+.ac-badge--bad { background: var(--amber-dim); color: var(--amber); }
 .ac-score { font-family: var(--mono); font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; }
 .ac-score--good { color: var(--green); }
 .ac-score--bad  { color: var(--red); }

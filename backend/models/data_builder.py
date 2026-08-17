@@ -35,10 +35,19 @@ class DataBuilder:
         # 5y of daily bars per ticker → far more real labelled samples.
         self.fetcher = StockDataFetcher(ticker, period=period)
 
-    def build(self):
+    def build(self, with_meta=False):
+        """
+        Returns (X, y) — or (X, y, meta) when `with_meta` is True, where meta is
+        a DataFrame carrying the observation date and the realised excess return
+        for each row. The dates are what make time-ordered (walk-forward)
+        validation possible; the excess return is what a backtest needs to size
+        realised performance rather than just count hits.
+        """
+        empty = (None, None, None) if with_meta else (None, None)
+
         df = self.fetcher.get_historical_data()
         if df is None or len(df) < 60:
-            return None, None
+            return empty
 
         # Same canonical features as inference
         frame = FeatureEngineer.build_frame(df)
@@ -49,7 +58,7 @@ class DataBuilder:
         # Benchmark's forward return over the same dates
         bench_fwd = self._benchmark_forward_return(df.index)
         if bench_fwd is None:
-            return None, None
+            return empty
 
         excess = stock_fwd - bench_fwd
         frame["excess_return"] = excess.values
@@ -59,13 +68,26 @@ class DataBuilder:
         frame = frame.replace([np.inf, -np.inf], np.nan)
         frame = frame.dropna(subset=["excess_return"]).dropna()
         if len(frame) < 30:
-            return None, None
+            return empty
 
         X = frame[FEATURE_NAMES].clip(-1e3, 1e3).values.astype(float)
         y = frame["label"].astype(int).values
 
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        return X, y
+
+        if not with_meta:
+            return X, y
+
+        try:
+            dates = pd.to_datetime(frame.index).tz_localize(None).normalize()
+        except (TypeError, ValueError):
+            dates = pd.to_datetime(frame.index).normalize()
+        meta = pd.DataFrame({
+            "date": dates,
+            "ticker": self.ticker,
+            "excess_return": frame["excess_return"].values,
+        })
+        return X, y, meta
 
     def _benchmark_forward_return(self, index):
         """Nifty 50 forward return over HORIZON, aligned onto the stock's dates."""

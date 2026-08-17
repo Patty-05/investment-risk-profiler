@@ -57,6 +57,89 @@ _BODY_FETCH_TIMEOUT = 8          # seconds per article body fetch
 _RECENCY_WINDOW = "7d"           # Google News recency filter
 _MIN_RELEVANCE = 0.15            # drop articles below this relevance score
 
+# ── Indian financial press ──────────────────────────────────────────────────
+# Established domestic business/markets publications. Queries are site-scoped
+# to these so the sample is professional reporting on Indian markets rather
+# than generic aggregators or US coverage.
+INDIAN_FINANCE_DOMAINS = [
+    "economictimes.indiatimes.com",   # The Economic Times
+    "moneycontrol.com",               # Moneycontrol
+    "business-standard.com",          # Business Standard
+    "livemint.com",                   # Mint
+    "thehindubusinessline.com",       # The Hindu BusinessLine
+    "financialexpress.com",           # The Financial Express
+    "cnbctv18.com",                   # CNBC-TV18
+    "ndtvprofit.com",                 # NDTV Profit
+    "reuters.com",                    # Reuters (India desk)
+    "bloomberg.com",                  # Bloomberg
+]
+
+# Credibility weights applied to each article's contribution to the aggregate
+# score. Dedicated markets desks with the deepest NSE/BSE coverage carry the
+# most weight; anything unrecognised falls back to _DEFAULT_SOURCE_WEIGHT.
+SOURCE_WEIGHTS = {
+    "economictimes.indiatimes.com": 1.00,
+    "moneycontrol.com": 1.00,
+    "business-standard.com": 0.95,
+    "livemint.com": 0.95,
+    "thehindubusinessline.com": 0.90,
+    "financialexpress.com": 0.85,
+    "cnbctv18.com": 0.85,
+    "ndtvprofit.com": 0.85,
+    "reuters.com": 1.00,
+    "bloomberg.com": 1.00,
+}
+_DEFAULT_SOURCE_WEIGHT = 0.6     # unknown / aggregator sources count for less
+
+# Publisher-NAME aliases. Google News RSS hands us a redirect stub for <link>
+# (news.google.com/rss/articles/…), so the publisher domain never appears in the
+# URL and domain matching alone always fell through to the default weight.
+# The <source> title is the only reliable signal, and it uses trade names and
+# vertical brands rather than domains — e.g. "ET EnergyWorld" and
+# "ETLegalWorld.com" are Economic Times properties.
+_SOURCE_ALIASES = [
+    # (substring to look for in the squashed publisher name, weight)
+    ("economictimes", 1.00), ("eteneryworld", 0.90), ("etenergyworld", 0.90),
+    ("etlegalworld", 0.85), ("etmarkets", 1.00), ("etnow", 0.90),
+    ("moneycontrol", 1.00),
+    ("businessstandard", 0.95),
+    ("livemint", 0.95), ("mint", 0.90),
+    ("hindubusinessline", 0.90), ("businessline", 0.90),
+    ("financialexpress", 0.85),
+    ("cnbctv18", 0.85),
+    ("ndtvprofit", 0.85),
+    ("reuters", 1.00),
+    ("bloomberg", 1.00),
+    ("thehindu", 0.85),
+    ("zeebusiness", 0.75),
+    ("businesstoday", 0.80),
+    ("outlookbusiness", 0.75),
+]
+
+
+def source_weight(url_or_source: str) -> float:
+    """
+    Credibility multiplier for a URL or publisher string.
+
+    Handles all three shapes RSS gives us: a real publisher URL, a Google News
+    redirect stub (in which case only the publisher name is informative), and a
+    trade name like "ET EnergyWorld".
+    """
+    raw = (url_or_source or "").lower()
+    squashed = re.sub(r"[^a-z0-9]", "", raw)
+
+    # Real publisher URLs (post-redirect-resolution) match on domain.
+    for domain, w in SOURCE_WEIGHTS.items():
+        if domain in raw:
+            return w
+
+    # Otherwise fall back to publisher-name aliases. Longest alias first so
+    # "etenergyworld" wins over a bare "mint"-style substring.
+    for alias, w in sorted(_SOURCE_ALIASES, key=lambda z: -len(z[0])):
+        if alias in squashed:
+            return w
+    return _DEFAULT_SOURCE_WEIGHT
+
 # Generic words that must not count as "the company" when matching relevance.
 _NAME_STOPWORDS = {
     "inc", "inc.", "corp", "corp.", "corporation", "company", "co", "co.",
@@ -236,27 +319,44 @@ class NewsIngestor:
     # ── Query construction ──────────────────────────────────────────────────
 
     def _google_news_rss(self, query: str) -> str:
+        # India locale (was en-US/US, which surfaced American coverage for an
+        # India-only product and buried the domestic financial press).
         q = urllib.parse.quote_plus(f"{query} when:{_RECENCY_WINDOW}")
-        return f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
+        return f"https://news.google.com/rss/search?q={q}&hl=en-IN&gl=IN&ceid=IN:en"
 
     def _yahoo_ticker_rss(self) -> str:
         return (
             "https://feeds.finance.yahoo.com/rss/2.0/headline"
-            f"?s={urllib.parse.quote(self.ticker)}&region=US&lang=en-US"
+            f"?s={urllib.parse.quote(self.ticker)}&region=IN&lang=en-IN"
         )
 
+    def _indian_source_query(self, name_q: str) -> str:
+        """
+        One Google-News query restricted to India's established financial press.
+        Site-scoping keeps aggregator/blogspam out of the sample, so FinBERT
+        scores reporting rather than SEO filler.
+        """
+        sites = " OR ".join(f"site:{d}" for d in INDIAN_FINANCE_DOMAINS)
+        return self._google_news_rss(f'"{name_q}" ({sites})')
+
     def _stock_feed_urls(self) -> list[str]:
-        urls = [self._yahoo_ticker_rss()]
         # Prefer the real company name for the news query; fall back to ticker
         name_q = self.company_name if self.company_name != self.ticker else self.ticker
-        urls.append(self._google_news_rss(f'"{name_q}" stock'))
-        return urls
+        return [
+            self._indian_source_query(name_q),          # domestic press first
+            self._google_news_rss(f'"{name_q}" share price NSE'),
+            self._yahoo_ticker_rss(),
+        ]
 
     def _sector_feed_urls(self) -> list[str]:
         if not (self.sector or self.industry):
             return []
         label = self.industry or self.sector
-        return [self._google_news_rss(f"{label} sector")]
+        sites = " OR ".join(f"site:{d}" for d in INDIAN_FINANCE_DOMAINS[:4])
+        return [
+            self._google_news_rss(f"{label} sector India ({sites})"),
+            self._google_news_rss(f"{label} sector India"),
+        ]
 
     # ── Relevancy scoring ───────────────────────────────────────────────────
 
@@ -352,8 +452,16 @@ class NewsIngestor:
         return out
 
     def _rank_and_trim(self, articles: list[Article]) -> list[Article]:
-        # Rank by relevance first, then recency
-        articles.sort(key=lambda a: (a.relevance, a._published_ts), reverse=True)
+        # Rank by relevance WEIGHTED BY PUBLISHER CREDIBILITY, then recency.
+        # Ranking on relevance alone let aggregators and content farms win the
+        # limited top-K slots over the established Indian financial press, so
+        # FinBERT ended up scoring low-quality copy. Credibility is applied here
+        # (selection) as well as in the aggregator (final weighting).
+        def key(a):
+            cred = source_weight(a.url or a.source or "")
+            return (a.relevance * cred, a._published_ts)
+
+        articles.sort(key=key, reverse=True)
         kept = [a for a in articles if a.relevance >= _MIN_RELEVANCE]
         # If the relevance filter is too aggressive (sparse metadata), keep top few
         if not kept and articles:

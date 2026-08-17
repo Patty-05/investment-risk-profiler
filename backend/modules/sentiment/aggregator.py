@@ -20,6 +20,8 @@ from __future__ import annotations
 import time
 import math
 
+from modules.sentiment.news_ingestor import source_weight
+
 
 # Recency half-life: an article this many days old carries half the weight of a
 # brand-new one. News sentiment decays fast, so keep it short.
@@ -47,8 +49,13 @@ def _weighted_stats(scored: list[dict], now: float) -> tuple[float, float, float
     den = 0.0
     directions = []
     for s in scored:
-        # weight combines recency and source relevance (relevance flo[0.15,1])
-        w = _recency_weight(s.get("published_ts", 0.0), now) * (0.5 + s.get("relevance", 0.0))
+        # Weight combines recency, topical relevance (~[0.15,1]) and publisher
+        # credibility, so a Moneycontrol/ET markets report outweighs an
+        # unattributed aggregator repost of the same headline.
+        cred = source_weight(s.get("url") or s.get("source") or "")
+        w = (_recency_weight(s.get("published_ts", 0.0), now)
+             * (0.5 + s.get("relevance", 0.0))
+             * cred)
         num += s["score"] * w
         den += w
         directions.append(1 if s["score"] > 55 else (-1 if s["score"] < 45 else 0))

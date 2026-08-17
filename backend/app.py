@@ -9,15 +9,11 @@ try:
 except Exception:
     pass
 
-# NOTE: torch must be imported before MKL/OpenMP libraries (numpy, scikit-learn,
-# xgboost). On Windows, loading torch after them triggers a DLL init conflict
-# (WinError 1114 loading c10.dll) that silently disables FinBERT sentiment.
-# Guarded so the app still runs if torch isn't installed (sentiment falls back
-# to the keyword engine).
-try:
-    import torch  # noqa: F401  (import for side-effect: DLL load order)
-except Exception:
-    pass
+# torch must be imported before MKL/OpenMP libraries (numpy, scikit-learn,
+# xgboost) or its DLL init fails on Windows and FinBERT silently degrades to the
+# keyword scorer. Centralised in torch_bootstrap so every entry point (app,
+# training scripts, validation harness) gets the same ordering guarantee.
+import torch_bootstrap  # noqa: F401  — MUST stay first
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
