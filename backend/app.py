@@ -78,7 +78,10 @@ def sanitize_for_json(obj):
         return int(obj)
 
     elif isinstance(obj, (np.floating,)):
-        return float(obj)
+        f = float(obj)
+        # NaN/Inf are not valid JSON; browsers' JSON.parse rejects the whole
+        # response, which made successful analyses render as blank.
+        return f if np.isfinite(f) else None
 
     elif pd.isna(obj):
         return None
@@ -211,11 +214,23 @@ def war_analysis():
         result = war_service.analyze(
             conflict_id=data.get('conflict_id'),
             scenario_text=data.get('scenario_text'),
+            use_ai=bool(data.get('use_ai')),
         )
         status = 200 if result.get('success') else 400
         return jsonify(sanitize_for_json(result)), status
     except Exception as e:
         print(f"Error in war analysis: {traceback.format_exc()}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/india-trade', methods=['GET'])
+def india_trade():
+    """India's trade by sector and partner nation from official customs data (UN Comtrade)."""
+    try:
+        from models import india_trade as it
+        return jsonify(sanitize_for_json(it.overview()))
+    except Exception as e:
+        print(f"Error in india-trade: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

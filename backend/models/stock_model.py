@@ -23,6 +23,44 @@ HYBRID_FEATURE_NAMES = list(FEATURE_NAMES) + ["rule_signal"]
 # Index 0 = UNDERPERFORM, 1 = OUTPERFORM (matches DataBuilder's label encoding).
 LABELS = ["UNDERPERFORM", "OUTPERFORM"]
 
+# Out-of-sample probability calibration, produced by `python -m models.calibrate`.
+# Raw model probabilities are over-confident out of sample (train AUC ~0.68 vs
+# walk-forward test AUC ~0.51), so predict() maps them through a Platt curve fit
+# on purged walk-forward predictions. If the file is absent predict() falls back
+# to the raw numbers and flags `calibration.applied = False`.
+CALIBRATION_PATH = os.path.join(os.path.dirname(__file__), "calibration.json")
+# Calibrated P(outperform) within +/- this of 0.5 is reported as "no clear edge".
+NEUTRAL_BAND = 0.02
+_calibration_cache = {"mtime": None, "data": None}
+
+
+def load_calibration():
+    """Cached read of calibration.json (reloaded if the file changes)."""
+    try:
+        mtime = os.path.getmtime(CALIBRATION_PATH)
+    except OSError:
+        return None
+    if _calibration_cache["mtime"] != mtime:
+        try:
+            import json
+            with open(CALIBRATION_PATH, "r", encoding="utf-8") as fh:
+                _calibration_cache["data"] = json.load(fh)
+            _calibration_cache["mtime"] = mtime
+        except Exception as e:
+            print(f"[warn] could not read calibration.json: {e}")
+            return None
+    return _calibration_cache["data"]
+
+
+def apply_calibration(p_out, key, cal):
+    """Platt-map a raw P(outperform) for model `key` (rf/xgb/hgb/ens)."""
+    if not cal or key not in cal.get("models", {}):
+        return float(p_out)
+    m = cal["models"][key]
+    p = float(np.clip(p_out, 1e-4, 1 - 1e-4))
+    z = m["a"] * np.log(p / (1 - p)) + m["b"]
+    return float(1.0 / (1.0 + np.exp(-z)))
+
 try:
     from xgboost import XGBClassifier
     XGB_AVAILABLE = True
@@ -437,106 +475,134 @@ class StockRiskModel:
                 v[int(cls)] = float(proba[i])
             return v
 
-        probs = _to_vec(self.model.predict_proba(features_scaled)[0], self.model.classes_)
-        pred = int(np.argmax(probs))
+        cal = load_calibration()
 
-        prob_dict = {labels[i]: float(probs[i]) for i in range(2)}
+        def _member(name, key, vec):
+            """Raw vote + calibrated confidence for one model's [P(under), P(out)] vector."""
+            raw_p = float(vec[1])
+            cal_p = apply_calibration(raw_p, key, cal)
+            # Vote relative to the out-of-sample base rate: Platt shifts the
+            # midpoint to it, so 0.5 would call everything an outperformer.
+            centre = float((cal or {}).get('base_rate') or 0.5)
+            vote = labels[int(cal_p >= centre)]
+            return {
+                "name": name, "key": key, "signal": vote,
+                # Calibrated confidence in the model's own direction. Out of
+                # sample this hugs 50% - that is the honest number.
+                "confidence": float(max(cal_p, 1 - cal_p)),
+                "outperform_probability": cal_p,
+                "raw_confidence": float(max(raw_p, 1 - raw_p)),
+            }
 
-        # Rule-based cross-check. It nudges the probability toward the rule's
-        # side rather than hard-flipping the label, so the headline signal still
-        # reflects the model when the model is confident.
-        rule_signal = self._rule_based_signal(feature_dict) if feature_dict else None
-        final_prediction = labels[pred]
+        rf_vec = _to_vec(self.model.predict_proba(features_scaled)[0], self.model.classes_)
+        members = [_member("Calibrated RF", "rf", rf_vec)]
+        vecs = [rf_vec]
 
-        if rule_signal is not None and rule_signal != labels[pred]:
-            override_idx = labels.index(rule_signal)
-            boosted = min(1.0, probs[override_idx] + 0.25)
-            adjusted = np.array([1.0 - boosted, 1.0 - boosted])
-            adjusted[override_idx] = boosted
-            prob_dict = {labels[i]: float(adjusted[i]) for i in range(2)}
-            final_prediction = labels[int(np.argmax(adjusted))]
-
-        # Raw RF vote (before the rule cross-check) — used for the honest
-        # 3-model consensus; `final_prediction` stays the headline signal.
-        rf_vote = labels[pred]
-        rf_conf = float(np.max(probs))
-        proba_vecs = [probs]
-
-        result = {
-            "prediction":    final_prediction,
-            "confidence":    float(max(prob_dict.values())),
-            "probabilities": prob_dict,
-            "rule_override": rule_signal is not None and rule_signal != rf_vote,
-            "rule_signal":   rule_signal,
-        }
-
-        # ── XGBoost (raw vote) ─────────────────────────────────────────────
-        xgb_vote, xgb_conf = None, None
+        # -- XGBoost
+        xgb_m = None
         if self.xgb_trained and self.xgb_model is not None:
             try:
-                xgb_vec  = _to_vec(self.xgb_model.predict_proba(features_scaled)[0],
-                                   self.xgb_model.classes_)
-                xgb_vote = labels[int(np.argmax(xgb_vec))]
-                xgb_conf = float(np.max(xgb_vec))
-                proba_vecs.append(xgb_vec)
+                xgb_vec = _to_vec(self.xgb_model.predict_proba(features_scaled)[0],
+                                  self.xgb_model.classes_)
+                xgb_m = _member("XGBoost", "xgb", xgb_vec)
+                vecs.append(xgb_vec)
             except Exception as e:
                 print(f"[warn] XGBoost inference failed: {e}")
+        members.append(xgb_m or {"name": "XGBoost", "key": "xgb", "signal": None, "confidence": None})
 
-        # ── Hybrid rule-aware HGB (raw vote) ───────────────────────────────
-        hgb_vote, hgb_conf = None, None
+        # -- Hybrid rule-aware HGB
+        hgb_m = None
         if self.hgb_trained and self.hgb_model is not None:
             try:
                 rule_val = self._rule_score_row(feature_dict) if feature_dict else 0.0
                 hybrid_input = np.hstack([features_scaled, [[rule_val]]])
-                hgb_vec  = _to_vec(self.hgb_model.predict_proba(hybrid_input)[0],
-                                   self.hgb_model.classes_)
-                hgb_vote = labels[int(np.argmax(hgb_vec))]
-                hgb_conf = float(np.max(hgb_vec))
-                proba_vecs.append(hgb_vec)
+                hgb_vec = _to_vec(self.hgb_model.predict_proba(hybrid_input)[0],
+                                  self.hgb_model.classes_)
+                hgb_m = _member("Hybrid (rule-aware)", "hgb", hgb_vec)
+                vecs.append(hgb_vec)
             except Exception as e:
                 print(f"[warn] Hybrid HGB inference failed: {e}")
+        members.append(hgb_m or {"name": "Hybrid (rule-aware)", "key": "hgb", "signal": None, "confidence": None})
 
-        # Backward-compatible fields (RF headline + XGB)
-        result["xgb_prediction"]  = xgb_vote
-        result["xgb_confidence"]  = xgb_conf
-        result["hgb_prediction"]  = hgb_vote
-        result["hgb_confidence"]  = hgb_conf
+        # Rule-based cross-check: shown alongside, never mixed into the
+        # probability (the old +0.25 nudge manufactured confidence).
+        rule_signal = self._rule_based_signal(feature_dict) if feature_dict else None
 
-        # ── Soft-voting ensemble ───────────────────────────────────────────
-        # Average the models' probability vectors. Averaging cuts each model's
-        # variance, so when they broadly agree the combined confidence is both
-        # higher and better calibrated than any single model on its own.
-        ens_vec = np.mean(proba_vecs, axis=0)
-        ens_idx = int(np.argmax(ens_vec))
-        ensemble = {
-            "prediction":  labels[ens_idx],
-            "confidence":  float(ens_vec[ens_idx]),
-            # P(beats the Nifty) — the single most interpretable number here.
-            "outperform_probability": float(ens_vec[1]),
-            "probabilities": {labels[i]: float(ens_vec[i]) for i in range(2)},
+        # -- Soft-voting ensemble, then calibrated
+        ens_raw = float(np.mean([v[1] for v in vecs]))
+        ens_p = apply_calibration(ens_raw, "ens", cal)
+        # Centre the neutral band on the out-of-sample base rate (the share of
+        # stocks that beat the Nifty), not on 0.5: a stock at the base rate has no edge.
+        centre = float((cal or {}).get('base_rate') or 0.5)
+        edge = ens_p - centre
+        if edge >= NEUTRAL_BAND:
+            ens_pred, edge_label = "OUTPERFORM", "Slight lean to outperform"
+        elif edge <= -NEUTRAL_BAND:
+            ens_pred, edge_label = "UNDERPERFORM", "Slight lean to underperform"
+        else:
+            ens_pred, edge_label = "NO_CLEAR_EDGE", "No clear edge vs the Nifty"
+
+        skill = (cal or {}).get("skill")
+        ens_cal = (cal or {}).get("models", {}).get("ens", {})
+        calibration = {
+            "applied": bool(cal),
+            "skill_tier": skill.get("tier") if skill else None,
+            "skill_label": skill.get("label") if skill else "Uncalibrated",
+            "oos_auc": skill.get("auc") if skill else None,
+            "oos_auc_ci95": skill.get("auc_ci95") if skill else None,
+            "n_oos": (cal or {}).get("n_oos"),
+            "oos_period": (cal or {}).get("oos_period"),
+            "base_rate": (cal or {}).get("base_rate"),
+            "calibrated_range": ens_cal.get("cal_p_range"),
+            "raw_range": ens_cal.get("raw_p_range"),
+            "brier_calibrated": ens_cal.get("brier_calibrated"),
+            "brier_constant": ens_cal.get("brier_constant"),
+            "ece_raw": ens_cal.get("ece_raw"),
+            "ece_calibrated": ens_cal.get("ece_calibrated"),
+            "generated": (cal or {}).get("generated"),
         }
-        result["ensemble"] = ensemble
 
-        # ── 3-model consensus ──────────────────────────────────────────────
-        members = [
-            {"name": "Calibrated RF",       "key": "rf",     "signal": rf_vote,  "confidence": rf_conf},
-            {"name": "XGBoost",             "key": "xgb",    "signal": xgb_vote, "confidence": xgb_conf},
-            {"name": "Hybrid (rule-aware)", "key": "hybrid", "signal": hgb_vote, "confidence": hgb_conf},
-        ]
+        ensemble = {
+            "prediction": ens_pred,
+            "edge_label": edge_label,
+            "confidence": float(max(ens_p, 1 - ens_p)),
+            # P(beats the Nifty), CALIBRATED against walk-forward out-of-sample outcomes.
+            "outperform_probability": ens_p,
+            "raw_outperform_probability": ens_raw,
+            "neutral_band": NEUTRAL_BAND,
+            "centre": centre,
+            "probabilities": {labels[0]: 1 - ens_p, labels[1]: ens_p},
+        }
+
+        result = {
+            # Headline = calibrated ensemble (kept under the old keys for consumers).
+            "prediction":    ens_pred,
+            "confidence":    ensemble["confidence"],
+            "probabilities": ensemble["probabilities"],
+            "rule_override": False,
+            "rule_signal":   rule_signal,
+            "xgb_prediction":  xgb_m["signal"] if xgb_m else None,
+            "xgb_confidence":  xgb_m["confidence"] if xgb_m else None,
+            "hgb_prediction":  hgb_m["signal"] if hgb_m else None,
+            "hgb_confidence":  hgb_m["confidence"] if hgb_m else None,
+            "ensemble": ensemble,
+            "calibration": calibration,
+        }
+
+        # -- 3-model consensus (raw votes, calibrated confidences)
         votes = [m["signal"] for m in members if m["signal"] is not None]
         if votes:
             tally = Counter(votes)
             majority, top_n = tally.most_common(1)[0]
-            n_models = len(votes)
             all_agree = len(tally) == 1
             result["consensus"] = {
                 "models":      members,
                 "agree":       all_agree,
-                "agreement":   f"{top_n}/{n_models}",
+                "agreement":   f"{top_n}/{len(votes)}",
                 "majority":    majority,
-                "n_models":    n_models,
+                "n_models":    len(votes),
                 "rule_signal": rule_signal,
-                "ensemble_prediction": ensemble["prediction"],
+                "ensemble_prediction": ens_pred,
                 "ensemble_confidence": ensemble["confidence"],
             }
         else:

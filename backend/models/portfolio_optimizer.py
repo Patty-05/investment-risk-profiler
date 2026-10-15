@@ -98,39 +98,20 @@ class PortfolioOptimizer:
                  "type": "Cash"},
             ]
 
-            # ── Diversification score — honest, Herfindahl-based ──────────────
-            # Effective number of asset-class positions = 1 / Σ wᵢ². Normalised
-            # so an equal 4-way split ≈ 100 and an all-in-one-bucket mix ≈ 0.
-            # A heavy single-stock tilt therefore scores LOW (as it should),
-            # instead of the old formula that peaked at a 50% equity weight.
-            fractions = [max(0.0, item["weight"] / 100.0) for item in portfolio]
-            hhi = sum(f * f for f in fractions) or 1.0
-            eff_n = 1.0 / hhi
-            n_buckets = len(portfolio)
-            diversification_score = round(
-                max(0.0, min(100.0, (eff_n - 1.0) / (n_buckets - 1.0) * 100.0)), 1
-            )
-            if diversification_score >= 70:
-                div_label = "Well spread across asset classes"
-            elif diversification_score >= 45:
-                div_label = "Moderately concentrated"
-            else:
-                div_label = "Concentrated — high single-name risk"
-
             # ── Suggestions ───────────────────────────────────────────────────
             suggestions = []
-            if p_out >= 0.55:
+            if p_out >= 0.52:
                 suggestions.append(
-                    f"Models put ~{round(p_out * 100)}% odds on beating the Nifty — "
+                    f"Calibrated odds of beating the Nifty are ~{round(p_out * 100, 1)}% — a slight lean, not a conviction call — "
                     "a staggered (SIP-style) entry beats a lump sum")
-            elif p_out <= 0.45:
+            elif p_out <= 0.48:
                 suggestions.append(
-                    f"Models put only ~{round(p_out * 100)}% odds on beating the Nifty — "
+                    f"Calibrated odds of beating the Nifty are only ~{round(p_out * 100, 1)}% — a slight lean away — "
                     "a plain index fund may serve this slot better")
             else:
                 suggestions.append(
-                    "Models see roughly coin-flip odds against the index — "
-                    "no clear edge either way in the next month")
+                    "Calibrated odds against the index are ~50/50 — the models show no "
+                    "reliable edge either way, so size this on fundamentals and risk, not on the ML signal")
             if risk_score > 70:
                 suggestions.append("Elevated stock risk — lean on the debt/gold sleeve for ballast")
             if weight >= 0.5:
@@ -143,8 +124,6 @@ class PortfolioOptimizer:
 
             return {
                 "allocation": portfolio,
-                "diversification_score": diversification_score,
-                "diversification_label": div_label,
                 "suggestions": suggestions,
                 # Prescriptive, educational guidance on how the investor's own
                 # profile should be shaped given THIS stock's risk — not

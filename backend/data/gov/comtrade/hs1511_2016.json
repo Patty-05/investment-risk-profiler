@@ -1,0 +1,23 @@
+{
+ "source": "UN Comtrade (official customs statistics reported by India)",
+ "url": "https://comtradeapi.un.org/public/v1/preview/C/A/HS",
+ "reporter": 699,
+ "hs": "1511",
+ "flow": "M",
+ "year": 2016,
+ "retrieved_utc": "2026-08-18T09:31:48Z",
+ "total_usd": 5641651925.0,
+ "partners_usd": {
+  "320": 4592726.0,
+  "340": 10588835.0,
+  "598": 2555751.0,
+  "170": 5958186.0,
+  "608": 16365321.0,
+  "360": 3636991566.0,
+  "458": 1964569505.0,
+  "702": 169.0,
+  "410": 2629.0,
+  "251": 11057.0,
+  "276": 16179.0
+ }
+}

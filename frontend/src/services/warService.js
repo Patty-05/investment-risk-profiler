@@ -18,10 +18,18 @@ export const getConflicts = async () => {
  * Analyse a conflict's India impact.
  * @param {{conflictId?: string, scenarioText?: string}} args
  */
-export const analyzeWar = async ({ conflictId, scenarioText } = {}) => {
+export const analyzeWar = async ({ conflictId, scenarioText, useAi = false } = {}) => {
   const { data } = await api.post('/api/war-analysis', {
     conflict_id: conflictId ?? null,
     scenario_text: scenarioText ?? null,
+    use_ai: !!useAi,
   });
+  return data;
+};
+
+
+/** India trade by sector and partner nation (official customs data). */
+export const getIndiaTrade = async () => {
+  const { data } = await api.get('/api/india-trade');
   return data;
 };

@@ -32,6 +32,59 @@ def _clamp(score, lo=0, hi=100):
         return 50.0  # safe default
 
 
+def _num(v):
+    try:
+        f = float(v)
+        return f if f == f and abs(f) != float("inf") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_snapshot(info, hist):
+    """Basic, glanceable company stats from yfinance info + price history."""
+    info = info or {}
+    close = hist["Close"].dropna() if hist is not None and "Close" in hist else None
+    price = _num(info.get("currentPrice")) or _num(info.get("regularMarketPrice"))
+    if price is None and close is not None and len(close):
+        price = float(close.iloc[-1])
+    prev = _num(info.get("previousClose")) or (float(close.iloc[-2]) if close is not None and len(close) > 1 else None)
+    hi = _num(info.get("fiftyTwoWeekHigh")) or (float(close.iloc[-252:].max()) if close is not None and len(close) else None)
+    lo = _num(info.get("fiftyTwoWeekLow")) or (float(close.iloc[-252:].min()) if close is not None and len(close) else None)
+
+    def pct(v):
+        v = _num(v)
+        return round(v * 100, 1) if v is not None else None
+
+    # dividend yield: derive from rate/price (yfinance's own field flips between % and fraction)
+    div_rate = _num(info.get("dividendRate"))
+    dy = round(div_rate / price * 100, 2) if div_rate and price else None
+
+    def ret(days):
+        if close is None or len(close) <= days:
+            return None
+        return round((float(close.iloc[-1]) / float(close.iloc[-1 - days]) - 1) * 100, 1)
+
+    return {
+        "name": info.get("longName") or info.get("shortName"),
+        "sector": info.get("sector"), "industry": info.get("industry"),
+        "price": round(price, 2) if price is not None else None,
+        "day_change_pct": round((price / prev - 1) * 100, 2) if price and prev else None,
+        "market_cap_cr": round(_num(info.get("marketCap")) / 1e7) if _num(info.get("marketCap")) else None,
+        "pe": _num(info.get("trailingPE")), "forward_pe": _num(info.get("forwardPE")),
+        "pb": _num(info.get("priceToBook")), "eps": _num(info.get("trailingEps")),
+        "dividend_yield_pct": dy,
+        "beta": _num(info.get("beta")),
+        "week52_high": hi, "week52_low": lo,
+        "range_position_pct": round((price - lo) / (hi - lo) * 100, 1) if price and hi and lo and hi > lo else None,
+        "avg_volume": _num(info.get("averageVolume")),
+        "roe_pct": pct(info.get("returnOnEquity")),
+        "profit_margin_pct": pct(info.get("profitMargins")),
+        "revenue_growth_pct": pct(info.get("revenueGrowth")),
+        "debt_to_equity": _num(info.get("debtToEquity")),
+        "return_1m_pct": ret(21), "return_6m_pct": ret(126), "return_1y_pct": ret(min(251, len(close) - 1)) if close is not None and len(close) >= 200 else None,
+    }
+
+
 class StockRiskAnalyzer:
     """Main class that performs comprehensive stock analysis"""
 
@@ -260,6 +313,7 @@ class StockRiskAnalyzer:
                 'model_disagreement':   ml_result.get('model_disagreement', False),
                 'consensus':            ml_result.get('consensus'),
                 'ensemble':             ml_result.get('ensemble'),
+                'model_calibration':    ml_result.get('calibration'),
                 'rule_signal':          ml_result.get('rule_signal'),
 
                 # Per-model key drivers (global feature importance)
@@ -278,6 +332,24 @@ class StockRiskAnalyzer:
                 horizon=self.horizon,
             )
             results["portfolio"] = portfolio
+
+            # Key stats for the snapshot strip (and the valuation merits)
+            results["snapshot"] = _build_snapshot(current_info, hist_data)
+
+            # Price history for the in-app chart (the embedded TradingView widget
+            # refuses NSE symbols, so we draw our own from the data we already have).
+            try:
+                close = hist_data["Close"].dropna().iloc[-252:]
+                step = max(1, len(close) // 130)
+                sampled = close.iloc[::step]
+                if sampled.index[-1] != close.index[-1]:
+                    sampled = pd.concat([sampled, close.iloc[[-1]]])
+                results["price_history"] = [
+                    {"d": str(i)[:10], "c": round(float(v), 2)} for i, v in sampled.items()
+                ]
+            except Exception as e:
+                print(f"[price_history] failed: {e}")
+                results["price_history"] = []
 
             # =========================
             # 🔹 MERITS / DEMERITS — why-to-buy vs why-not (deterministic)
@@ -386,7 +458,10 @@ class StockRiskAnalyzer:
         geo_exposed = bool(geo and geo.get('exposed'))
         geo_score = _clamp(geo.get('score', 50)) if geo else 50.0
         if geo_exposed:
-            geo_weight = 0.12
+            # Evidence-scaled: the geo factor has no demonstrated predictive
+            # power (IC ~ 0), so it carries 3-10% depending on how strong the
+            # exposure is, rather than a flat 12%.
+            geo_weight = 0.03 + 0.07 * float(geo.get('strength', 0.5) or 0.0)
             for k in weights:
                 weights[k] *= (1 - geo_weight)
             weights['geopolitical'] = geo_weight

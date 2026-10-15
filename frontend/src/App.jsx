@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import SeasonalAnalysis from './SeasonalAnalysis';
+import GeoAnalyzer from './GeoAnalyzer';
 
-import { analyzeStock,
-         getConflicts, analyzeWar,
-         useApi, useAppContext, AppProvider } from './services';
+import { analyzeStock, useApi, useAppContext, AppProvider } from './services';
 
 export default function App() {
   return (
@@ -14,13 +13,25 @@ export default function App() {
   );
 }
 
+function useTheme() {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('theme') || 'dark'; } catch (_) { return 'dark'; }
+  });
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem('theme', theme); } catch (_) {}
+  }, [theme]);
+  return [theme, () => setTheme(t => (t === 'dark' ? 'light' : 'dark'))];
+}
+
 function AppShell() {
+  const [theme, toggleTheme] = useTheme();
   const [view, setView] = useState('analysis'); // 'analysis' | 'war' | 'seasonal'
-  const [handoff, setHandoff] = useState(null);  // { ticker, ts } from War Room → Analysis
+  const [handoff, setHandoff] = useState(null);  // { ticker, ts } from the Geopolitical Analyzer → Analysis
   const { backendOnline, pingBackend } = useAppContext();
   useEffect(() => { pingBackend(); }, [pingBackend]);
 
-  // Phase 3: jump from a War Room report straight into a ticker's full analysis
+  // Phase 3: jump from a Geopolitical Analyzer report straight into a ticker's full analysis
   const analyseTicker = (ticker) => {
     if (!ticker) return;
     setHandoff({ ticker: ticker.toUpperCase().trim(), ts: Date.now() });
@@ -34,7 +45,7 @@ function AppShell() {
           <span className="brand-mark">◈</span>
           <div>
             <h1>Investment Risk Profiler</h1>
-            <p className="brand-sub">Multi-factor equity analysis · ML signals · personalised allocation</p>
+            <p className="brand-sub">Multi-factor NSE equity analysis · calibrated ML · personalised allocation</p>
           </div>
         </div>
         <nav className="app-nav">
@@ -42,10 +53,14 @@ function AppShell() {
             Analysis
           </button>
           <button className={view === 'war' ? 'nav-link active' : 'nav-link'} onClick={() => setView('war')}>
-            War Room
+            Geopolitical Analyzer
           </button>
           <button className={view === 'seasonal' ? 'nav-link active' : 'nav-link'} onClick={() => setView('seasonal')}>
             Seasonal
+          </button>
+          <button type="button" className="theme-toggle" onClick={toggleTheme}
+            aria-label="Toggle light/dark theme" title="Toggle light/dark theme">
+            {theme === 'dark' ? '☀' : '☾'}
           </button>
           <span className={`status-dot ${backendOnline === false ? 'offline' : 'online'}`}
             title={backendOnline === false ? 'Backend offline' : 'Backend online'} />
@@ -59,7 +74,7 @@ function AppShell() {
       )}
 
       {view === 'analysis' && <StockAnalysis handoff={handoff} />}
-      {view === 'war' && <WarRoom onAnalyseTicker={analyseTicker} />}
+      {view === 'war' && <GeoAnalyzer onAnalyseTicker={analyseTicker} />}
       {view === 'seasonal' && <SeasonalAnalysis />}
     </div>
   );
@@ -91,14 +106,16 @@ const sigClass = (s) => {
   const v = String(s || '').toUpperCase();
   if (v === 'OUTPERFORM') return 'buy';
   if (v === 'UNDERPERFORM') return 'sell';
-  return 'hold';
+  return 'hold';          // NO_CLEAR_EDGE and anything unknown
 };
 const sigLabel = (s) => {
   const v = String(s || '').toUpperCase();
   if (v === 'OUTPERFORM') return 'Outperform';
   if (v === 'UNDERPERFORM') return 'Underperform';
+  if (v === 'NO_CLEAR_EDGE') return 'No clear edge';
   return s;
 };
+const pct1 = (p) => (p == null ? '—' : `${(p * 100).toFixed(1)}%`);
 
 // TradingView needs an exchange-prefixed symbol (NSE:INFY), not the yfinance
 // "INFY.NS" form — that mismatch is why the chart rendered blank.
@@ -131,7 +148,7 @@ function StockAnalysis({ handoff }) {
     runAnalysis(ticker, { riskAppetite, horizon });
   };
 
-  // Phase 3: a ticker handed off from the War Room auto-fills and auto-runs.
+  // Phase 3: a ticker handed off from the Geopolitical Analyzer auto-fills and auto-runs.
   useEffect(() => {
     if (!handoff?.ticker) return;
     setTicker(handoff.ticker);
@@ -261,26 +278,20 @@ function StockResult({ result, getScoreClass, profile, onAnalysePeer }) {
         </span>
       </div>
 
-      {/* Hero: overall score */}
-      <div className={`overall-score ${getScoreClass(result.overall_score.score)}`}>
-        <div className="score-display">
-          <h3>Overall Score</h3>
-          <div className="score-value">{result.overall_score.score}<span className="score-max">/100</span></div>
-          <div className="risk-level">{result.risk_level}</div>
-        </div>
-      </div>
+      <SectionNav />
+
+      {/* Hero: overall score ring + how each factor contributes */}
+      <div id="sec-overview" className="anchor" />
+      <Hero result={result} tone={getScoreClass(result.overall_score.score)} />
 
       {/* Price chart */}
-      <div className="chart-wrap">
-        <iframe
-          src={`https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(tvSymbol(result.ticker))}&interval=D&theme=dark&hidevolume=0&hidelegend=0&studies=[]`}
-          width="100%" height="380" frameBorder="0" title="Price chart"
-        />
-        <a className="chart-fallback" href={`https://in.tradingview.com/chart/?symbol=${encodeURIComponent(tvSymbol(result.ticker))}`}
-           target="_blank" rel="noopener noreferrer">Chart not loading? Open {tvSymbol(result.ticker)} on TradingView ↗</a>
-      </div>
+      <div id="sec-stats" className="anchor" />
+      <StockSnapshot snap={result.snapshot} ticker={result.ticker} />
+
+      <PriceChart history={result.price_history} ticker={result.ticker} />
 
       {/* Analysis grid with explainability */}
+      <div id="sec-factors" className="anchor" />
       <div className="section-label">Factor Breakdown</div>
       <div className="analysis-grid">
         <AnalysisCard title="Technical" score={t.score} signal={t.signal} explain={techExplain} />
@@ -303,11 +314,17 @@ function StockResult({ result, getScoreClass, profile, onAnalysePeer }) {
         <AnalysisCard title="Sector" score={sc.score} signal={`${sc.vs_market?.outperformance ?? 0}% vs Market`}
           items={[`Sector: ${sc.sector ?? 'N/A'}`]} explain={sectorExplain} />
         <AnalysisCard title="Geopolitical" score={g.score} signal={g.signal}
-          items={[g.exposed ? g.summary : 'No exposure to tracked conflicts']}
-          explain={geoExplain} />
+          items={g.exposed
+            ? [g.summary,
+               `Percentile ${g.calibration?.percentile ?? '—'} of ${g.calibration?.universe ?? '—'} covered stocks`,
+               `Exposure strength ${Math.round((g.strength ?? 0) * 100)}%`]
+            : ['No exposure to tracked conflicts']}
+          badge={g.exposed ? { text: 'calibrated', tone: 'good' } : null}
+          explain={[...geoExplain, ...(g.calibration?.note ? [{ text: g.calibration.note, tone: 'neutral' }] : [])]} />
       </div>
 
       {/* Dual-model AI section */}
+      <div id="sec-ai" className="anchor" />
       {result.ml_prediction && <AISection result={result} />}
 
       {/* Explanation */}
@@ -329,12 +346,14 @@ function StockResult({ result, getScoreClass, profile, onAnalysePeer }) {
       )}
 
       {/* Merits / demerits — why buy vs why not */}
+      <div id="sec-merits" className="anchor" />
       {result.merits_analysis && <MeritsCard merits={result.merits_analysis} />}
 
       {/* Better-performing sector peers as alternatives */}
       {result.peer_analysis && <PeerAlternatives peers={result.peer_analysis} onAnalysePeer={onAnalysePeer} />}
 
       {/* Portfolio allocation (profile-driven) */}
+      <div id="sec-portfolio" className="anchor" />
       {result?.portfolio?.allocation && <PortfolioCard portfolio={result.portfolio} profile={profile} />}
 
       {/* Recommendations */}
@@ -350,6 +369,192 @@ function StockResult({ result, getScoreClass, profile, onAnalysePeer }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+
+// ── Price chart (1Y, drawn from backend data) ──────────────────────────────
+function PriceChart({ history, ticker }) {
+  const [hover, setHover] = useState(null);
+  const pts = history || [];
+  const link = `https://in.tradingview.com/chart/?symbol=${encodeURIComponent(tvSymbol(ticker))}`;
+  if (pts.length < 2) {
+    return <div className="chart-wrap chart-wrap--empty"><a className="chart-fallback" href={link} target="_blank" rel="noopener noreferrer">Open {tvSymbol(ticker)} on TradingView ↗</a></div>;
+  }
+  const W = 720, H = 220, PX = 8, PY = 14;
+  const cs = pts.map(p => p.c);
+  const lo = Math.min(...cs), hi = Math.max(...cs);
+  const x = (i) => PX + (i / (pts.length - 1)) * (W - 2 * PX);
+  const y = (v) => PY + (1 - (v - lo) / ((hi - lo) || 1)) * (H - 2 * PY);
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.c).toFixed(1)}`).join(' ');
+  const area = `${line} L${x(pts.length - 1).toFixed(1)},${H - PY} L${x(0).toFixed(1)},${H - PY} Z`;
+  const first = cs[0], last = cs[cs.length - 1];
+  const up = last >= first;
+  const onMove = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const i = Math.round(((e.clientX - r.left) / r.width * W - PX) / (W - 2 * PX) * (pts.length - 1));
+    setHover(Math.max(0, Math.min(pts.length - 1, i)));
+  };
+  const cur = hover != null ? pts[hover] : pts[pts.length - 1];
+  return (
+    <div className="chart-wrap">
+      <div className="chart-head">
+        <div>
+          <span className="chart-price">₹{cur.c.toLocaleString('en-IN')}</span>
+          <span className="chart-date">{cur.d}</span>
+        </div>
+      </div>
+      <svg className={`chart-svg ${up ? 'up' : 'down'}`} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+        onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img" aria-label={`${ticker} one-year price chart`}>
+        <path className="chart-area" d={area} />
+        <path className="chart-line" d={line} />
+        {hover != null && (
+          <g>
+            <line className="chart-cross" x1={x(hover)} x2={x(hover)} y1={PY} y2={H - PY} />
+            <circle className="chart-dot" cx={x(hover)} cy={y(pts[hover].c)} r="4" />
+          </g>
+        )}
+      </svg>
+      <div className="chart-foot">
+        <span>52w low ₹{lo.toLocaleString('en-IN')}</span>
+        <a href={link} target="_blank" rel="noopener noreferrer">Full chart on TradingView ↗</a>
+        <span>52w high ₹{hi.toLocaleString('en-IN')}</span>
+      </div>
+    </div>
+  );
+}
+
+
+// ── Key stats snapshot (basic info at a glance) ─────────────────────────────
+const fmtCr = (cr) => {
+  if (cr == null) return '—';
+  if (cr >= 100000) return `₹${(cr / 100000).toFixed(2)}L Cr`;
+  return `₹${cr.toLocaleString('en-IN')} Cr`;
+};
+const fmtNum = (v, d = 1, suf = '') => (v == null ? '—' : `${Number(v).toFixed(d)}${suf}`);
+const fmtVol = (v) => (v == null ? '—' : v >= 1e7 ? `${(v / 1e7).toFixed(2)} Cr` : v >= 1e5 ? `${(v / 1e5).toFixed(1)} L` : Math.round(v).toLocaleString('en-IN'));
+
+function StockSnapshot({ snap, ticker }) {
+  if (!snap) return null;
+  const up = (snap.day_change_pct ?? 0) >= 0;
+  const stats = [
+    ['Market cap', fmtCr(snap.market_cap_cr)],
+    ['P/E (trailing)', fmtNum(snap.pe)],
+    ['P/E (forward)', fmtNum(snap.forward_pe)],
+    ['Price / book', fmtNum(snap.pb)],
+    ['EPS', snap.eps == null ? '—' : `₹${snap.eps.toFixed(1)}`],
+    ['Return on equity', fmtNum(snap.roe_pct, 1, '%')],
+    ['Profit margin', fmtNum(snap.profit_margin_pct, 1, '%')],
+    ['Revenue growth', fmtNum(snap.revenue_growth_pct, 1, '%')],
+    ['Debt / equity', fmtNum(snap.debt_to_equity, 0, '%')],
+    ['Beta', fmtNum(snap.beta, 2)],
+    ['Avg volume', fmtVol(snap.avg_volume)],
+  ];
+  const rets = [['1M', snap.return_1m_pct], ['6M', snap.return_6m_pct]];
+  return (
+    <div className="snapshot">
+      <div className="snap-head">
+        <div>
+          <div className="snap-name">{snap.name || ticker}</div>
+          <div className="snap-tags">
+            {snap.sector && <span className="tag">{snap.sector}</span>}
+            {snap.industry && <span className="tag">{snap.industry}</span>}
+            <span className="tag tag--mono">{ticker}</span>
+          </div>
+        </div>
+        <div className="snap-price">
+          <span className="snap-price-val">{snap.price != null ? `₹${snap.price.toLocaleString('en-IN')}` : '—'}</span>
+          {snap.day_change_pct != null && <span className={`snap-chg ${up ? 'up' : 'down'}`}>{up ? '▲' : '▼'} {Math.abs(snap.day_change_pct).toFixed(2)}% today</span>}
+        </div>
+      </div>
+
+      {snap.week52_low != null && snap.week52_high != null && (
+        <div className="range52">
+          <span>₹{snap.week52_low.toLocaleString('en-IN')}</span>
+          <div className="range52-track">
+            <div className="range52-dot" style={{ left: `${Math.max(0, Math.min(100, snap.range_position_pct ?? 50))}%` }} />
+          </div>
+          <span>₹{snap.week52_high.toLocaleString('en-IN')}</span>
+          <em>52-week range</em>
+        </div>
+      )}
+
+      <div className="stat-grid">
+        {stats.map(([k, v]) => (
+          <div key={k} className="stat-cell"><span>{k}</span><strong>{v}</strong></div>
+        ))}
+      </div>
+
+      <div className="ret-row">
+        {rets.map(([k, v]) => (
+          <div key={k} className={`ret-chip ${v == null ? '' : v >= 0 ? 'up' : 'down'}`}>
+            <span>{k} return</span><strong>{v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`}</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+const SECTIONS = [
+  ['sec-overview', 'Overview'], ['sec-stats', 'Key stats'], ['sec-factors', 'Factors'],
+  ['sec-ai', 'AI models'], ['sec-merits', 'Why buy · why not'], ['sec-portfolio', 'Portfolio'],
+];
+function SectionNav() {
+  const go = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  return (
+    <nav className="section-nav" aria-label="Jump to section">
+      {SECTIONS.map(([id, label]) => <button type="button" key={id} onClick={() => go(id)}>{label}</button>)}
+    </nav>
+  );
+}
+
+
+// ── Hero: score ring + per-factor contribution ────────────────────────────
+function ScoreRing({ score }) {
+  const r = 54, c = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, Number(score) || 0));
+  return (
+    <svg className="ring" viewBox="0 0 132 132" role="img" aria-label={`Overall score ${pct} out of 100`}>
+      <circle className="ring-track" cx="66" cy="66" r={r} />
+      <circle className="ring-fill" cx="66" cy="66" r={r}
+        strokeDasharray={c} strokeDashoffset={c * (1 - pct / 100)} transform="rotate(-90 66 66)" />
+      <text x="66" y="68" className="ring-num" textAnchor="middle">{Math.round(pct)}</text>
+      <text x="66" y="88" className="ring-max" textAnchor="middle">/ 100</text>
+    </svg>
+  );
+}
+
+function Hero({ result, tone }) {
+  const bd = result.overall_score?.breakdown || {};
+  const w = result.overall_score?.weights_used || {};
+  const rows = [
+    ['technical', 'Technical'], ['fundamental', 'Fundamental'], ['sentiment', 'Sentiment'],
+    ['volumetric', 'Volume'], ['sector', 'Sector'], ['geopolitical', 'Geopolitical'],
+  ].filter(([k]) => (w[k] ?? 0) > 0);
+  const label = (sc) => (sc >= 60 ? 'good' : sc < 45 ? 'bad' : 'neutral');
+  return (
+    <div className={`hero ${tone}`}>
+      <div className="hero-ring">
+        <ScoreRing score={result.overall_score.score} />
+        <div className="hero-ring-label">Overall score</div>
+        <div className="risk-level">{result.risk_level}</div>
+      </div>
+      <div className="hero-factors">
+        <div className="hero-factors-head">
+          <span>Factor scores</span><span>weight in overall</span>
+        </div>
+        {rows.map(([k, name]) => (
+          <div key={k} className="hf-row">
+            <span className="hf-name">{name}</span>
+            <div className="hf-track"><div className={`hf-fill hf-fill--${label(bd[k])}`} style={{ width: `${bd[k] ?? 0}%` }} /></div>
+            <span className="hf-score">{Math.round(bd[k] ?? 0)}</span>
+            <span className="hf-weight">{Math.round((w[k] ?? 0) * 100)}%</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -439,16 +644,55 @@ function PortfolioCard({ portfolio, profile }) {
           {portfolio.suggestions.map((s, i) => <li key={i}>{s}</li>)}
         </ul>
       )}
-      <p className="diversification">
-        Diversification score: <strong>{portfolio.diversification_score}</strong>
-        {portfolio.diversification_label && <span className="diversification-label"> · {portfolio.diversification_label}</span>}
-      </p>
     </div>
   );
 }
 
 
 // ── 3-Model AI Intelligence ────────────────────────────────────────────────
+function ModelReliability({ cal }) {
+  const [open, setOpen] = useState(false);
+  if (!cal) return null;
+  const tier = cal.skill_tier || 'none';
+  const ci = cal.oos_auc_ci95;
+  const headline = !cal.applied
+    ? 'Probabilities are uncalibrated'
+    : tier === 'none' ? 'No demonstrated predictive edge'
+    : tier === 'weak' ? 'Weak predictive edge' : 'Moderate predictive edge';
+  return (
+    <div className={`reliability reliability--${cal.applied ? tier : 'none'}`}>
+      <div className="reliability-head">
+        <span className="reliability-dot" />
+        <div>
+          <div className="reliability-title">Model reliability · {headline}</div>
+          <p className="reliability-sub">
+            {cal.applied ? (
+              <>Tested on {cal.n_oos?.toLocaleString()} unseen predictions ({cal.oos_period?.[0]?.slice(0, 4)}–{cal.oos_period?.[1]?.slice(0, 4)}),
+              the ensemble scores an out-of-sample AUC of <strong>{cal.oos_auc?.toFixed(3)}</strong>
+              {ci && <> (95% CI {ci[0].toFixed(3)}–{ci[1].toFixed(3)})</>} — 0.500 is a coin flip.
+              Probabilities below are calibrated to those results, so they stay close to 50% by design.</>
+            ) : 'Run models/calibrate.py to calibrate these probabilities against out-of-sample results.'}
+          </p>
+        </div>
+        {cal.applied && (
+          <button type="button" className="reliability-more" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+            {open ? 'Hide' : 'Details'}
+          </button>
+        )}
+      </div>
+      {open && cal.applied && (
+        <div className="reliability-grid">
+          <div><span>Raw model range (5–95%)</span><strong>{cal.raw_range ? `${pct1(cal.raw_range[0])} – ${pct1(cal.raw_range[1])}` : '—'}</strong></div>
+          <div><span>Calibrated range (5–95%)</span><strong>{cal.calibrated_range ? `${pct1(cal.calibrated_range[0])} – ${pct1(cal.calibrated_range[1])}` : '—'}</strong></div>
+          <div><span>Base rate (stocks beating the Nifty)</span><strong>{pct1(cal.base_rate)}</strong></div>
+          <div><span>Brier score vs always-50%</span><strong>{cal.brier_calibrated ?? '—'} vs {cal.brier_constant ?? '—'}</strong></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function AISection({ result }) {
   const consensus = result.consensus;
   const models = (consensus?.models || []).filter(m => m.signal);
@@ -457,11 +701,6 @@ function AISection({ result }) {
     'Calibrated RF': 'ai-signal-card--rf',
     'XGBoost': 'ai-signal-card--xgb',
     'Hybrid (rule-aware)': 'ai-signal-card--hgb',
-  };
-  const fillMod = {
-    'Calibrated RF': '',
-    'XGBoost': 'confidence-fill--teal',
-    'Hybrid (rule-aware)': 'confidence-fill--violet',
   };
 
   const drivers = [
@@ -474,31 +713,28 @@ function AISection({ result }) {
     <div className="ai-section">
       <div className="ai-section-title">3-Model AI Intelligence</div>
       <p className="ai-section-sub">
-        Each model predicts whether this stock will <strong>beat or lag the Nifty 50</strong> over
+        Each model estimates whether this stock will <strong>beat or lag the Nifty 50</strong> over
         the next ~1 month — a relative call, not a forecast that the price rises or falls.
       </p>
 
+      <ModelReliability cal={result.model_calibration} />
+
+      {consensus && <ConsensusPanel consensus={consensus} ensemble={result.ensemble}
+        outperformProbability={result.outperform_probability ?? result.ensemble?.outperform_probability} />}
+
+      <div className="xgb-section-heading">Individual models · votes &amp; calibrated odds</div>
       <div className="ai-signals-row">
-        {models.length > 0 ? models.map((m, i) => (
+        {models.map((m, i) => (
           <div key={i} className={`ai-signal-card ${cardMod[m.name] || 'ai-signal-card--rf'}`}>
             <div className="ai-signal-model-label">{m.name}</div>
             <div className={`ml-signal ${sigClass(m.signal)}`}>{sigLabel(m.signal)}</div>
-            <div className="ai-signal-conf">Confidence: {((m.confidence || 0) * 100).toFixed(1)}%</div>
-            <div className="confidence-bar">
-              <div className={`confidence-fill ${fillMod[m.name] || ''}`} style={{ width: `${(m.confidence || 0) * 100}%` }} />
-            </div>
+            <div className="ai-signal-conf">P(beat Nifty) <strong>{pct1(m.outperform_probability)}</strong></div>
+            {m.raw_confidence != null && (
+              <div className="ai-signal-raw">raw model confidence {(m.raw_confidence * 100).toFixed(0)}% → calibrated {(m.confidence * 100).toFixed(1)}%</div>
+            )}
           </div>
-        )) : (
-          <div className="ai-signal-card ai-signal-card--rf">
-            <div className="ai-signal-model-label">Calibrated RF</div>
-            <div className={`ml-signal ${sigClass(result.ml_prediction)}`}>{sigLabel(result.ml_prediction)}</div>
-            <div className="ai-signal-conf">Confidence: {((result.ml_confidence || 0) * 100).toFixed(1)}%</div>
-          </div>
-        )}
+        ))}
       </div>
-
-      {consensus && <ConsensusPanel consensus={consensus}
-        outperformProbability={result.outperform_probability ?? result.ensemble?.outperform_probability} />}
 
       {drivers.length > 0 && (
         <>
@@ -518,44 +754,53 @@ function AISection({ result }) {
 }
 
 
-function ConsensusPanel({ consensus, outperformProbability }) {
+function ConsensusPanel({ consensus, ensemble, outperformProbability }) {
   const models = (consensus.models || []).filter(m => m.signal);
   if (models.length === 0) return null;
   const agree = consensus.agree;
   const rule = consensus.rule_signal;
   const pOut = outperformProbability;
+  const verdict = ensemble?.prediction || consensus.ensemble_prediction;
+  // Zoomed 40–60% scale: calibrated odds live in a narrow band, so a 0–100 bar
+  // would pin the marker at the middle and hide the (small) differences.
+  const LO = 0.40, HI = 0.60;
+  const pos = pOut == null ? 50 : Math.max(0, Math.min(100, ((pOut - LO) / (HI - LO)) * 100));
+  const tone = verdict === 'OUTPERFORM' ? 'up' : verdict === 'UNDERPERFORM' ? 'down' : 'flat';
+  const band = ((ensemble?.neutral_band ?? 0.02) * 100).toFixed(0);
   return (
     <>
-      <div className="xgb-section-heading">3-Model Consensus · vs Nifty 50</div>
+      <div className="xgb-section-heading">Ensemble verdict · vs Nifty 50</div>
+      <div className={`verdict verdict--${tone}`}>
+        <div className="verdict-main">
+          <div className="verdict-label">{ensemble?.edge_label || sigLabel(verdict)}</div>
+          <div className="verdict-sub">Calibrated probability of beating the Nifty over ~1 month</div>
+        </div>
+        <div className="verdict-value">{pct1(pOut)}</div>
+      </div>
+
+      {pOut != null && (
+        <div className="odds-block">
+          <div className="odds-scale">
+            <div className="odds-zone odds-zone--down" />
+            <div className="odds-zone odds-zone--flat" />
+            <div className="odds-zone odds-zone--up" />
+            <div className="odds-marker" style={{ left: `${pos}%` }} title={pct1(pOut)} />
+          </div>
+          <div className="odds-ticks"><span>40%</span><span>45%</span><span>50% · coin flip</span><span>55%</span><span>60%</span></div>
+          <p className="odds-note">
+            The grey middle band is “no clear edge” (±{band} points around the {pct1(ensemble?.centre)} base rate). The raw ensemble output was{' '}
+            {pct1(ensemble?.raw_outperform_probability)} before calibration.
+          </p>
+        </div>
+      )}
+
       <div className={`disagree-panel ${agree ? 'ok' : 'warn'}`}>
         <div className="disagree-header">
           <span className="disagree-icon">{agree ? '●' : '△'}</span>
           <h4>{agree
-            ? 'All three models agree'
-            : `Split — ${consensus.agreement} agree · majority ${sigLabel(consensus.majority)}`}</h4>
+            ? 'All three models vote the same way'
+            : `Split vote — ${consensus.agreement} agree · majority ${sigLabel(consensus.majority)}`}</h4>
         </div>
-
-        {pOut != null && (
-          <div className="odds-block">
-            <div className="odds-head">
-              <span className="odds-label">Probability of beating the Nifty (next ~1 month)</span>
-              <span className={`odds-value ${pOut >= 0.5 ? 'up' : 'down'}`}>{(pOut * 100).toFixed(1)}%</span>
-            </div>
-            <div className="odds-track">
-              <div className={`odds-fill ${pOut >= 0.5 ? 'up' : 'down'}`} style={{ width: `${pOut * 100}%` }} />
-              <div className="odds-mid" title="50% = coin flip vs the index" />
-            </div>
-            <p className="odds-note">50% marks a coin flip against the index — the further from the middle, the stronger the edge.</p>
-          </div>
-        )}
-
-        {consensus.ensemble_prediction && (
-          <div className="ensemble-row">
-            <span className="ensemble-label">Ensemble (soft-vote)</span>
-            <span className={`ensemble-signal ${sigClass(consensus.ensemble_prediction)}`}>{sigLabel(consensus.ensemble_prediction)}</span>
-            <span className="ensemble-conf">{(consensus.ensemble_confidence * 100).toFixed(1)}% confidence</span>
-          </div>
-        )}
         <div className="disagree-signals">
           {models.map((m, i) => (
             <React.Fragment key={i}>
@@ -574,8 +819,8 @@ function ConsensusPanel({ consensus, outperformProbability }) {
         )}
         <p className={`disagree-msg ${agree ? 'ok' : 'warn'}`}>
           {agree
-            ? 'All three models independently reached the same conclusion, strengthening the signal.'
-            : 'The models diverge — treat the majority as tentative and wait for stronger confirmation before acting.'}
+            ? 'Models that share the same inputs agreeing is not independent confirmation — read it alongside the reliability note above.'
+            : 'The models diverge — treat any lean as tentative.'}
         </p>
       </div>
     </>
@@ -600,163 +845,6 @@ function FeatureImportanceBars({ data, fillClass }) {
 }
 
 
-// ── War Room (India-specific geopolitical analysis) ────────────────────────
-function WarRoom({ onAnalyseTicker }) {
-  const conflictsApi = useApi(getConflicts);
-  const analysisApi = useApi(analyzeWar);
-  const [scenario, setScenario] = useState('');
-  const [activeId, setActiveId] = useState(null);
-
-  useEffect(() => { conflictsApi.execute(); }, []); // eslint-disable-line
-
-  const conflicts = conflictsApi.data?.conflicts || [];
-  const res = analysisApi.data;
-
-  const runConflict = (id) => { setActiveId(id); setScenario(''); analysisApi.execute({ conflictId: id }); };
-  const runScenario = (e) => {
-    e.preventDefault();
-    if (!scenario.trim()) return;
-    setActiveId(null);
-    analysisApi.execute({ scenarioText: scenario.trim() });
-  };
-
-  const biasClass = (b) => ({ 'risk-on': 'good', 'risk-off': 'bad', mixed: 'neutral' }[b] || 'neutral');
-
-  return (
-    <div>
-      <div className="war-intro">
-        <p>India-specific geopolitical risk analysis. Pick a tracked conflict or describe a scenario — see how it ripples through Indian sectors and stocks via trade exposure and bilateral ties.</p>
-        <span className="war-disclaimer">Educational analysis · not financial advice</span>
-      </div>
-
-      <div className="section-label">Conflict Watchlist</div>
-      {conflictsApi.loading && <p>Loading watchlist…</p>}
-      {conflictsApi.error && <div className="error">{conflictsApi.error}</div>}
-      <div className="war-grid">
-        {conflicts.map(c => (
-          <button key={c.id} type="button"
-            className={`war-card ${activeId === c.id ? 'active' : ''}`}
-            onClick={() => runConflict(c.id)}>
-            <div className="war-card-head">
-              <span className="war-card-name">{c.name}</span>
-              <span className={`war-status war-status--${c.status}`}>{titleize(c.status)}</span>
-            </div>
-            <div className="war-parties">{(c.parties || []).join('  vs  ')}</div>
-            <p className="war-card-sum">{c.summary}</p>
-            <span className="war-relevance">India relevance: {titleize(c.india_relevance)}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="section-label">Or describe a scenario</div>
-      <form className="war-scenario" onSubmit={runScenario}>
-        <input type="text" value={scenario} onChange={(e) => setScenario(e.target.value)}
-          placeholder="e.g. What if the Israel–Iran conflict closes the Strait of Hormuz?" />
-        <button type="submit" className="btn btn--primary" disabled={analysisApi.loading}>
-          {analysisApi.loading ? 'Analysing…' : 'Analyse'}
-        </button>
-      </form>
-
-      {analysisApi.error && <div className="error">{analysisApi.error}</div>}
-      {analysisApi.loading && (
-        <div className="result-container"><p>Tracing transmission channels into Indian markets…</p></div>
-      )}
-      {!analysisApi.loading && res?.success && (
-        <WarReport res={res} biasClass={biasClass} onAnalyseTicker={onAnalyseTicker} />
-      )}
-    </div>
-  );
-}
-
-
-function WarReport({ res, biasClass, onAnalyseTicker }) {
-  const report = res.report;
-  const magDots = (m) => '●'.repeat(Math.max(0, Math.min(5, m || 0))) + '○'.repeat(5 - Math.max(0, Math.min(5, m || 0)));
-
-  if (!report) {
-    return (
-      <div className="result-container">
-        <h2>{res.conflict?.name}</h2>
-        <p className="war-summary">{res.raw_text}</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="result-container">
-      <div className="result-head">
-        <div>
-          <h2>{res.conflict?.name}</h2>
-          <p className="result-sub">{(res.conflict?.parties || []).join('  vs  ')}</p>
-        </div>
-        <span className={`pill pill--${biasClass(report.net_bias)}`}>
-          {report.net_bias} · {report.confidence} confidence
-        </span>
-      </div>
-
-      <p className="war-summary">{report.india_summary}</p>
-
-      <div className="war-section-head">
-        <div className="section-label" style={{ margin: 0 }}>Transmission Channels</div>
-        <span className="war-tip">Tap a ticker to run its full analysis →</span>
-      </div>
-      {report.transmission_channels?.map((ch, i) => (
-        <div key={i} className="war-channel">
-          <div className="war-channel-head">
-            <span className="war-driver">{ch.driver}</span>
-            <span className={`war-dir war-dir--${ch.direction}`}>{ch.direction === 'up' ? '↑' : '↓'} {ch.direction}</span>
-          </div>
-          <div className="war-affected">
-            {ch.affected?.map((a, j) => (
-              <div key={j} className={`war-impact war-impact--${a.impact}`}>
-                <div className="war-impact-top">
-                  <span className="war-sector">{a.sector}</span>
-                  <span className="war-mag" title={`Magnitude ${a.magnitude}/5`}>{magDots(a.magnitude)}</span>
-                </div>
-                <p className="war-rationale">{a.rationale}</p>
-                {a.tickers?.length > 0 && (
-                  <div className="war-tickers">
-                    {a.tickers.map((t, k) => (
-                      <button key={k} type="button" className="war-ticker war-ticker--btn"
-                        onClick={() => onAnalyseTicker && onAnalyseTicker(t)}
-                        title={`Analyse ${t}`}>
-                        {t} <span className="war-ticker-go">→</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {report.watch_items?.length > 0 && (
-        <div className="callout">
-          <h4>Watch items — what would confirm or escalate this</h4>
-          <ul className="callout-list">{report.watch_items.map((w, i) => <li key={i}>{w}</li>)}</ul>
-        </div>
-      )}
-
-      {report.caveats?.length > 0 && (
-        <div className="callout callout--ai">
-          <h4>Caveats</h4>
-          <ul className="callout-list">{report.caveats.map((w, i) => <li key={i}>{w}</li>)}</ul>
-        </div>
-      )}
-
-      {res.grounding && (
-        <p className="war-grounding">
-          Grounded on — parties: {(res.grounding.parties_profiled || []).join(', ') || '—'} ·
-          commodities: {(res.grounding.commodities || []).join(', ') || '—'}
-        </p>
-      )}
-      <p className="war-disclaimer-foot">{res.disclaimer || 'Educational geopolitical-risk analysis, not financial advice.'}</p>
-    </div>
-  );
-}
-
-
 // ── Merits / Demerits — why buy vs why not ─────────────────────────────────
 function MeritsCard({ merits }) {
   const pros = merits?.merits || [];
@@ -764,7 +852,13 @@ function MeritsCard({ merits }) {
   if (pros.length === 0 && cons.length === 0) return null;
   return (
     <div className="merits-card">
-      <div className="section-label" style={{ margin: '0 0 12px' }}>Why Buy · Why Not</div>
+      <div className="merits-head">
+        <div className="section-label" style={{ margin: 0 }}>Why Buy · Why Not</div>
+        <span className={`stance stance--${merits.stance || 'hold'}`}>
+          {merits.stance === 'buy' ? 'Buy-leaning' : merits.stance === 'avoid' ? 'Caution-leaning' : 'Balanced'}
+          {' · '}{pros.length} for · {cons.length} against
+        </span>
+      </div>
       <div className="merits-grid">
         <div className="merits-col merits-col--pro">
           <div className="merits-col-head merits-col-head--pro"><span className="merits-icon">▲</span> Why to buy</div>

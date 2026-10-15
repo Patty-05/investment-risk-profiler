@@ -75,8 +75,10 @@ def _build_context(d):
         agree_txt = ("all three agree" if cons.get("agree")
                      else f"{cons.get('agreement')} agree; majority {cons.get('majority')}")
         p_out = ens.get("outperform_probability")
-        p_txt = (f" Ensemble probability of BEATING the Nifty over the next ~1 month: "
-                 f"{_fmt((p_out or 0) * 100)}%." if p_out is not None else "")
+        p_txt = (f" Calibrated ensemble probability of BEATING the Nifty over the next ~1 month: "
+                 f"{_fmt((p_out or 0) * 100)}% (verdict: {ens.get('edge_label')}). Out-of-sample "
+                 f"testing shows these models have little predictive skill, so describe this as a weak "
+                 f"tie-breaker and do NOT present it as a forecast." if p_out is not None else "")
         lines.append(
             "Three ML models (trained on Indian NSE data) predict RELATIVE performance — "
             "whether this stock OUTPERFORMS or UNDERPERFORMS the Nifty 50 over the next "

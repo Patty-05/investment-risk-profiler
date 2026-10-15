@@ -954,20 +954,6 @@ export default function SeasonalAnalysis() {
               </div>
             </div>
           )}
-
-          {/* Disclaimer */}
-          <div style={{
-            marginTop: 28, padding: '12px 16px',
-            background: 'rgba(255,165,2,0.06)',
-            border: '1px solid rgba(255,165,2,0.2)',
-            borderRadius: 'var(--radius)', fontSize: '0.75rem',
-            color: 'var(--text-muted)', fontFamily: 'var(--font-mono)',
-            lineHeight: 1.6
-          }}>
-            ⚠️ Seasonal patterns are based on historical averages and do not guarantee future returns.
-            Past performance is not indicative of future results. This is for informational purposes only —
-            not financial advice. Always conduct due diligence before investing.
-          </div>
         </>
       )}
     </div>
